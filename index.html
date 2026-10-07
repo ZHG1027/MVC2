@@ -457,7 +457,7 @@ function spawnLogic(dt){
     const t = state.time;
     state.spawnTimer = Math.max(5.0, 16 - t*0.035) * rand(0.88, 1.22);
     spawnZombie();
-    if (t > 55 && Math.random() < 0.25) spawnZombie();
+    if (t > 55 && Math.random() < 0.20) spawnZombie();
   }
   if (state.time >= state.nextWave){
     state.nextWave += 40;
