@@ -462,7 +462,7 @@ function spawnLogic(dt){
   if (state.time >= state.nextWave){
     state.nextWave += 40;
     state.waveCount++;
-    const n = 4 + state.waveCount;
+    const n = 3 + Math.floor(state.waveCount / 2.5);
     for (let i=0;i<n;i++) state.pending.push({ t: i*0.35 });
   }
   for (let i=state.pending.length-1;i>=0;i--){
