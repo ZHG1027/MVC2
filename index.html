@@ -228,7 +228,7 @@ const ZOMBIES = {
   fast:   { key:'fast',   name:'疾风春',   img:'zombie_fast',   hp:180, speed:35, dps:26, w:60, h:92, fallback:'#a8c96b' }
 };
 
-const WORD_POOL = ['操','傻逼','脑瘫','乐子','扫码','去死','你妈','傻屌'];
+const WORD_POOL = ['操','傻逼','脑瘫','乐子','二货','去死','你妈','傻屌'];
 
 /* =========================================================
    5. 状态
@@ -455,9 +455,9 @@ function spawnLogic(dt){
   state.spawnTimer -= dt;
   if (state.spawnTimer <= 0){
     const t = state.time;
-    state.spawnTimer = Math.max(5.0, 16 - t*0.035) * rand(0.88, 1.22);
+    state.spawnTimer = Math.max(3.0, 16 - t*0.035) * rand(0.88, 1.22);
     spawnZombie();
-    if (t > 55 && Math.random() < 0.20) spawnZombie();
+    if (t > 55 && Math.random() < 0.35) spawnZombie();
   }
   if (state.time >= state.nextWave){
     state.nextWave += 40;
