@@ -237,7 +237,7 @@ let state = {
   sun:100, time:0, running:false, over:false,
   plants:[], zombies:[], projectiles:[], suns:[],
   cooldowns:{}, selected:null,
-  spawnTimer:20, skySunTimer:5, nextWave:30, waveCount:0,
+  r:20, skySunTimer:5, nextWave:30, waveCount:0,
   pending:[], best:0
 };
 let shovelMode = false;
@@ -455,9 +455,9 @@ function spawnLogic(dt){
   state.spawnTimer -= dt;
   if (state.spawnTimer <= 0){
     const t = state.time;
-    state.spawnTimer = Math.max(1.3, 5 - t*0.035) * rand(0.88, 1.22);
+    state.spawnTimer = Math.max(1.3, 6.8 - t*0.035) * rand(0.88, 1.22);
     spawnZombie();
-    if (t > 55 && Math.random() < 0.50) spawnZombie();
+    if (t > 55 && Math.random() < 0.48) spawnZombie();
   }
   if (state.time >= state.nextWave){
     state.nextWave += 40;
