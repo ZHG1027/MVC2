@@ -455,15 +455,15 @@ function spawnLogic(dt){
   state.spawnTimer -= dt;
   if (state.spawnTimer <= 0){
     const t = state.time;
-    state.spawnTimer = Math.max(1.3, 16 - t*0.035) * rand(0.88, 1.22);
+    state.spawnTimer = Math.max(1.3, 5 - t*0.035) * rand(0.88, 1.22);
     spawnZombie();
-    if (t > 55 && Math.random() < 0.55) spawnZombie();
+    if (t > 55 && Math.random() < 0.70) spawnZombie();
   }
   if (state.time >= state.nextWave){
     state.nextWave += 40;
     state.waveCount++;
-    const n = 3 + state.waveCount;
-    for (let i=0;i<n;i++) state.pending.push({ t: i*0.5 });
+    const n = 7 + state.waveCount;
+    for (let i=0;i<n;i++) state.pending.push({ t: i*0.3 });
   }
   for (let i=state.pending.length-1;i>=0;i--){
     state.pending[i].t -= dt;
