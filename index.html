@@ -14,7 +14,7 @@
   }
   #wrap{width:900px;max-width:100%;}
   #hud{
-    display:flex;align-items:center;gap:8px;background:#2b4420;
+    display:flex;align-items:center;gap:6px;background:#2b4420;
     padding:8px 10px;border-radius:12px 12px 0 0;
     box-shadow:inset 0 -3px 0 rgba(0,0,0,.28);
   }
@@ -29,7 +29,8 @@
     font-variant-numeric:tabular-nums;flex:0 0 auto;
   }
   #sunBox img{width:26px;height:26px;object-fit:contain;}
-  #cards{display:flex;gap:6px;flex:1;min-width:0;overflow-x:auto;padding-bottom:2px;}
+  #cards{display:flex;gap:6px;flex:1;min-width:0;overflow-x:auto;padding-bottom:2px;
+         scroll-behavior:smooth;}
   .card{
     position:relative;width:56px;height:72px;background:#d9c18a;
     border:2px solid #8a6f3c;border-radius:8px;
@@ -53,12 +54,39 @@
   .card.disabled{filter:grayscale(.75) brightness(.72);cursor:not-allowed;}
   .card.selected{outline:3px solid #ffe066;box-shadow:0 0 14px #ffe066;}
   .card.dragging{opacity:.4;outline:2px dashed #ffe066;}
+
+  /* ★ 卡片栏左右箭头 */
+  .arrowBtn{
+    width:32px;height:46px;flex:0 0 auto;
+    background:#3d5c2c;border:2px solid #6b8a52;
+    border-radius:8px;cursor:pointer;padding:0;
+    color:#e6ffd0;
+    display:flex;align-items:center;justify-content:center;
+    transition:background .1s,transform .08s;
+    -webkit-tap-highlight-color:transparent;
+  }
+  .arrowBtn:active{background:#5a7d40;transform:scale(.94);}
+  .arrowBtn:disabled{opacity:.35;cursor:not-allowed;}
+
   #shovelBtn{
     width:46px;height:46px;flex:0 0 auto;background:#3d5c2c;border:2px solid #6b8a52;
     border-radius:8px;cursor:pointer;padding:2px;
   }
   #shovelBtn.active{outline:3px solid #ffe066;box-shadow:0 0 12px #ffe066;}
   #shovelBtn img{width:100%;height:100%;object-fit:contain;}
+
+  /* ★ 暂停键 */
+  #pauseBtn{
+    width:46px;height:46px;flex:0 0 auto;
+    background:#3d5c2c;border:2px solid #6b8a52;border-radius:8px;
+    cursor:pointer;padding:0;color:#e6ffd0;
+    display:flex;align-items:center;justify-content:center;
+    transition:background .1s;
+    -webkit-tap-highlight-color:transparent;
+  }
+  #pauseBtn:active{background:#5a7d40;}
+  #pauseBtn.active{outline:3px solid #ffe066;box-shadow:0 0 12px #ffe066;background:#7a5a20;}
+
   #timerBox{
     background:#16240f;padding:6px 10px;border-radius:8px;font-weight:800;
     color:#b6f08a;white-space:nowrap;font-variant-numeric:tabular-nums;
@@ -89,6 +117,8 @@
     .card{width:44px;height:62px;}
     .card img{height:42px;}
     .avatar{width:38px;height:38px;}
+    .arrowBtn{width:26px;height:40px;}
+    #shovelBtn,#pauseBtn{width:40px;height:40px;}
     #timerBox{font-size:12px;padding:5px 7px;}
     #sunBox{min-width:64px;font-size:13px;padding:4px 6px;}
   }
@@ -99,8 +129,30 @@
   <div id="hud">
     <img class="avatar" src="mao.png" alt="茅">
     <div id="sunBox"><img src="sun.png" alt=""><span id="sunCount">100</span></div>
+
+    <!-- ★ 卡片栏左箭头 -->
+    <button class="arrowBtn" id="arrowLeft" title="向左滚动">
+      <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+        <path d="M15 5 L8 12 L15 19" stroke="currentColor" stroke-width="3"
+              fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </button>
+
     <div id="cards"></div>
+
+    <!-- ★ 卡片栏右箭头 -->
+    <button class="arrowBtn" id="arrowRight" title="向右滚动">
+      <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+        <path d="M9 5 L16 12 L9 19" stroke="currentColor" stroke-width="3"
+              fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </button>
+
     <button id="shovelBtn" title="铲除植物"><img src="shovel.png" alt="铲"></button>
+
+    <!-- ★ 暂停键 -->
+    <button id="pauseBtn" title="暂停 / 继续"></button>
+
     <div id="timerBox">存活 <span id="timer">0.0</span>s</div>
     <img class="avatar enemy" src="chun.png" alt="春">
   </div>
@@ -180,7 +232,6 @@ const PLANT_MAX_Y = LAWN_Y + LAWN_H - 6;
 
 const ZOMBIE_GOAL_X = 8;
 
-/* ★ 300 秒后僵尸密度 ×4（原版的 4 倍） */
 const DENSITY_RAMP_TIME = 300;
 const DENSITY_RAMP_MULT = 4.0;
 
@@ -219,7 +270,7 @@ const WORD_POOL = ['操','傻逼','脑瘫','乐子','二货','去死','你妈','
    5. 状态
    ========================================================= */
 let state = {
-  sun:100, time:0, running:false, over:false,
+  sun:100, time:0, running:false, over:false, paused:false,
   plants:[], zombies:[], projectiles:[], suns:[], explosions:[],
   bombs:[],
   cooldowns:{}, selected:null,
@@ -321,7 +372,7 @@ function findPlantIndexAt(x, y){
    ========================================================= */
 function startGame(){
   state = {
-    sun:100, time:0, running:true, over:false,
+    sun:100, time:0, running:true, over:false, paused:false,
     plants:[], zombies:[], projectiles:[], suns:[], explosions:[],
     bombs:[],
     cooldowns:{ maodou:0, xiangri:0, shuibei:0, maotouying:0, hanbing:0, maotong:0, zunmine:0, tankmao:0, maodan:0 },
@@ -334,6 +385,7 @@ function startGame(){
   cardDrag = null;
   document.getElementById('shovelBtn').classList.remove('active');
   document.getElementById('overlay').classList.remove('show');
+  updatePauseButton();
   updateHUD();
 }
 
@@ -341,9 +393,11 @@ function gameOver(){
   if (state.over) return;
   state.over = true;
   state.running = false;
+  state.paused = false;
   const best = Math.max(loadBest(), state.time);
   saveBest(best);
   state.best = best;
+  updatePauseButton();
   showOverlay(
     '茅的后庭被攻破了……',
     '「春」走到了最左侧。再来一次，撑得更久一点！',
@@ -386,7 +440,7 @@ function buildCards(){
       '<div class="cd"></div>';
 
     el.addEventListener('pointerdown', ev=>{
-      if (!state.running || state.over) return;
+      if (!state.running || state.over || state.paused) return;   /* ★ 暂停时不响应 */
       const d = PLANTS[key];
       if (state.cooldowns[key] > 0 || state.sun < d.cost) return;
       ev.preventDefault();
@@ -428,7 +482,7 @@ function buildCards(){
       const cel = cardEls[cd.key];
       if (cel) cel.classList.remove('dragging');
       if (cancelled) return;
-      if (!state.running || state.over) return;
+      if (!state.running || state.over || state.paused) return;
       if (cd.moved){
         if (!isInsideCanvas(ev.clientX, ev.clientY)) return;
         const p = clientToCanvas(ev.clientX, ev.clientY);
@@ -469,7 +523,7 @@ function updateHUD(){
 }
 
 /* =========================================================
-   10. 生成逻辑（300 秒后密度 ×4）
+   10. 生成逻辑
    ========================================================= */
 function spawnZombie(){
   const t = state.time;
@@ -527,7 +581,6 @@ function spawnLogic(dt){
   if (state.spawnTimer <= 0){
     const t = state.time;
     let interval = Math.max(5.5, 12 - t*0.064) * rand(0.85, 1.15);
-    /* ★ 300 秒后：间隔 ÷4（密度 ×4） */
     if (t > DENSITY_RAMP_TIME) interval /= DENSITY_RAMP_MULT;
     state.spawnTimer = interval;
     spawnZombie();
@@ -537,7 +590,6 @@ function spawnLogic(dt){
     state.nextWave += 40;
     state.waveCount++;
     let n = Math.max(2, Math.round((4 + state.waveCount) * 0.67));
-    /* ★ 300 秒后：波次数量 ×4 */
     if (state.time > DENSITY_RAMP_TIME) n = Math.round(n * DENSITY_RAMP_MULT);
     for (let i=0;i<n;i++) state.pending.push({ t: i*0.35 });
   }
@@ -679,7 +731,6 @@ function updateZombies(dt){
     const def = ZOMBIES[z.type];
     if (z.slowTimer > 0) z.slowTimer -= dt;
 
-    /* 大跳中 */
     if (z.jumping){
       z.jumpT += dt;
       const p = Math.min(1, z.jumpT / z.jumpDur);
@@ -696,7 +747,6 @@ function updateZombies(dt){
       continue;
     }
 
-    /* 坦克僵尸遇到坦克茅 → 停住 */
     if (z.type === 'tank'){
       let blockedByTank = null;
       for (const p of state.plants){
@@ -873,7 +923,6 @@ function drawBackground(){
   ctx.restore();
 }
 
-/* ★ 对话框：独立函数，永远画在最上层 */
 function drawDialogBubble(x, y, text, scale, alpha){
   if (scale <= 0.001 || alpha <= 0.001) return;
   ctx.save();
@@ -901,7 +950,6 @@ function drawDialogBubble(x, y, text, scale, alpha){
   rr(px, py, pw, ph, 10);
   ctx.stroke();
 
-  /* 尾巴 */
   ctx.fillStyle = 'rgba(255,255,255,0.97)';
   ctx.beginPath();
   ctx.moveTo(x - 8, py + ph - 1);
@@ -1131,6 +1179,32 @@ function drawExplosions(){
   }
 }
 
+/* ★ 暂停时覆盖层 */
+function drawPausedOverlay(){
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  ctx.fillRect(0, 0, CV.width, CV.height);
+
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  ctx.font = 'bold 52px "PingFang SC","Microsoft YaHei",sans-serif';
+  ctx.fillStyle = '#c9f58e';
+  ctx.fillText('已 暂 停', CV.width/2, CV.height/2 - 30);
+
+  ctx.font = '16px "PingFang SC","Microsoft YaHei",sans-serif';
+  ctx.fillStyle = '#d8e6cd';
+  ctx.fillText('点击右上角 ▶ 按钮继续游戏', CV.width/2, CV.height/2 + 40);
+
+  /* 顶部两竖条装饰 */
+  ctx.fillStyle = 'rgba(201,245,142,0.85)';
+  const cx = CV.width/2, cy = CV.height/2 - 110;
+  ctx.fillRect(cx - 22, cy - 22, 14, 44);
+  ctx.fillRect(cx + 8,  cy - 22, 14, 44);
+
+  ctx.restore();
+}
+
 function render(){
   drawBackground();
 
@@ -1145,7 +1219,6 @@ function render(){
   drawBombs();
   drawExplosions();
 
-  /* ★ 台词气泡统一在最上层绘制，锚点用僵尸精灵头顶 */
   for (const z of state.zombies){
     if (!z.blocked || z.jumping) continue;
     const def = ZOMBIES[z.type];
@@ -1156,8 +1229,9 @@ function render(){
     drawDialogBubble(z.x, anchorY, '♫但有...♫', scale, 1);
   }
 
-  const previewKey = cardDrag ? cardDrag.key : state.selected;
-  if (state.running && !state.over && previewKey && mouseX > -100){
+  const previewKey = (!state.paused && cardDrag) ? cardDrag.key
+                   : (!state.paused ? state.selected : null);
+  if (state.running && !state.over && !state.paused && previewKey && mouseX > -100){
     const def = PLANTS[previewKey];
     const valid = isValidPos(mouseX, mouseY, {type: previewKey});
     if (previewKey === 'maodan'){
@@ -1190,6 +1264,11 @@ function render(){
       ctx.restore();
     }
   }
+
+  /* ★ 暂停覆盖层画在最上层 */
+  if (state.running && !state.over && state.paused){
+    drawPausedOverlay();
+  }
 }
 
 /* =========================================================
@@ -1202,8 +1281,10 @@ function loop(ts){
   lastTs = ts;
   if (dt > 0.05) dt = 0.05;
   if (dt < 0) dt = 0;
-  if (state.running && !state.over) update(dt);
+
+  if (state.running && !state.over && !state.paused) update(dt);
   else updateHUD();
+
   render();
   requestAnimationFrame(loop);
 }
@@ -1249,7 +1330,7 @@ function fireMaodan(x, y){
 }
 
 CV.addEventListener('pointerdown', e=>{
-  if (!state.running || state.over) return;
+  if (!state.running || state.over || state.paused) return;   /* ★ 暂停时禁止交互 */
   if (cardDrag) return;
   e.preventDefault();
   const p = toCanvas(e);
@@ -1298,7 +1379,7 @@ CV.addEventListener('pointermove', e=>{
   if (cardDrag) return;
   const p = toCanvas(e);
   mouseX = p.x; mouseY = p.y;
-  if (dragPlant){
+  if (dragPlant && !state.paused){
     let nx = p.x + dragOffX;
     let ny = p.y + dragOffY;
     nx = Math.max(0, Math.min(CV.width - 10, nx));
@@ -1348,15 +1429,94 @@ CV.addEventListener('pointerleave', ()=>{
 });
 
 document.getElementById('shovelBtn').addEventListener('click', function(){
-  if (!state.running) return;
+  if (!state.running || state.paused) return;
   shovelMode = !shovelMode;
   state.selected = null;
   this.classList.toggle('active', shovelMode);
   updateHUD();
 });
 
+/* =========================================================
+   ★ 卡片栏左右箭头滚动
+   ========================================================= */
+(function setupCardScroll(){
+  const cardsBox = document.getElementById('cards');
+  const btnL = document.getElementById('arrowLeft');
+  const btnR = document.getElementById('arrowRight');
+  const STEP = 120;
+
+  function refreshArrows(){
+    const maxScroll = cardsBox.scrollWidth - cardsBox.clientWidth;
+    btnL.disabled = cardsBox.scrollLeft <= 1;
+    btnR.disabled = cardsBox.scrollLeft >= maxScroll - 1;
+  }
+
+  btnL.addEventListener('click', ()=>{
+    cardsBox.scrollBy({ left: -STEP, behavior: 'smooth' });
+  });
+  btnR.addEventListener('click', ()=>{
+    cardsBox.scrollBy({ left:  STEP, behavior: 'smooth' });
+  });
+  cardsBox.addEventListener('scroll', refreshArrows);
+  window.addEventListener('resize', refreshArrows);
+
+  /* 卡片构建完之后再刷新一次状态 */
+  const origBuild = buildCards;
+  buildCards = function(){
+    origBuild.apply(this, arguments);
+    setTimeout(refreshArrows, 0);
+  };
+})();
+
+/* =========================================================
+   ★ 暂停键
+   ========================================================= */
+const pauseBtn = document.getElementById('pauseBtn');
+const ICON_PAUSE = '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">' +
+  '<rect x="6" y="5" width="4" height="14" rx="1" fill="currentColor"/>' +
+  '<rect x="14" y="5" width="4" height="14" rx="1" fill="currentColor"/></svg>';
+const ICON_PLAY  = '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">' +
+  '<path d="M7 5 L19 12 L7 19 Z" fill="currentColor"/></svg>';
+
+function updatePauseButton(){
+  if (state.paused){
+    pauseBtn.innerHTML = ICON_PLAY;
+    pauseBtn.classList.add('active');
+    pauseBtn.title = '继续游戏';
+  }else{
+    pauseBtn.innerHTML = ICON_PAUSE;
+    pauseBtn.classList.remove('active');
+    pauseBtn.title = '暂停游戏';
+  }
+}
+
+pauseBtn.addEventListener('click', ()=>{
+  if (!state.running || state.over) return;
+  state.paused = !state.paused;
+
+  /* 暂停时清理所有拖拽状态，避免继续后错位 */
+  if (state.paused){
+    if (dragPlant){
+      dragPlant.x = dragOrigX;
+      dragPlant.y = dragOrigY;
+      dragPlant = null;
+    }
+    if (cardDrag){
+      const el = cardEls[cardDrag.key];
+      if (el) el.classList.remove('dragging');
+      cardDrag = null;
+    }
+  }
+  updatePauseButton();
+  updateHUD();
+});
+
 document.addEventListener('keydown', e=>{
   if (e.key === 'Escape'){
+    if (state.paused){
+      state.paused = false;
+      updatePauseButton();
+    }
     state.selected = null;
     shovelMode = false;
     document.getElementById('shovelBtn').classList.remove('active');
@@ -1368,6 +1528,11 @@ document.addEventListener('keydown', e=>{
     }
     updateHUD();
   }
+  /* 空格也能暂停 */
+  if (e.key === ' ' && state.running && !state.over){
+    e.preventDefault();
+    pauseBtn.click();
+  }
 });
 
 /* =========================================================
@@ -1377,6 +1542,7 @@ Promise.all(
   Object.keys(ASSETS).map(k => loadImage(ASSETS[k]).then(im => { IMG[k] = im; }))
 ).then(()=>{
   buildCards();
+  updatePauseButton();
   const best = loadBest();
   showOverlay(
     'MVC 3.0发布！',
@@ -1384,10 +1550,10 @@ Promise.all(
     '更新1：除尊地雷和茅弹外，所有植物只能种在左侧 1/4 种植区。\n' +
     '更新2：新增「茅弹」——550 阳光 / 冷却 3 分钟，\n' +
     '　　　　点击任意处从天而降，全屏清理僵尸。\n' +
-    '更新3：坦克僵尸随机刷新，属性与普通僵尸相同；\n' +
-    '　　　　撞上坦克茅时双方停下，直到坦克僵尸被击杀。\n' +
+    '更新3：坦克僵尸随机刷新，撞上坦克茅时双方停下。\n' +
     '更新4：按住卡片拖动可直接种植；点卡片 → 点草坪也可以。\n' +
     '更新5：300 秒后僵尸密度 ×4，注意防线！\n' +
+    '新增：右上角暂停键，卡片栏左右箭头可滚动武器库。\n' +
     '挡住「春」，别让它们走到最左边！',
     best > 0 ? '历史最长存活：' + best.toFixed(1) + ' 秒' : '历史最长存活：——',
     '开始防守',
