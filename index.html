@@ -29,18 +29,24 @@
     font-variant-numeric:tabular-nums;flex:0 0 auto;
   }
   #sunBox img{width:26px;height:26px;object-fit:contain;}
-  #cards{display:flex;gap:6px;flex:1;min-width:0;}
+  #cards{display:flex;gap:6px;flex:1;min-width:0;overflow-x:auto;padding-bottom:2px;}
   .card{
-    position:relative;width:60px;height:76px;background:#d9c18a;
-    border:2px solid #8a6f3c;border-radius:8px;cursor:pointer;
+    position:relative;width:56px;height:72px;background:#d9c18a;
+    border:2px solid #8a6f3c;border-radius:8px;
+    cursor:grab;                 /* ★ 提示可拖 */
     overflow:hidden;flex:0 0 auto;transition:transform .08s;
+    touch-action:none;           /* ★ 防止拖拽时触发滚动 */
   }
-  .card:active{transform:scale(.96);}
-  .card img{width:100%;height:54px;object-fit:contain;display:block;margin-top:2px;}
+  .card:active{transform:scale(.96);cursor:grabbing;}
+  .card img{
+    width:100%;height:50px;object-fit:contain;display:block;margin-top:2px;
+    pointer-events:none;         /* ★ 事件都落到卡片本体 */
+    -webkit-user-drag:none;
+  }
   .card .cost{
     position:absolute;bottom:0;left:0;right:0;text-align:center;
     font-size:12px;font-weight:800;color:#2b1c00;background:#e8d5a5;
-    line-height:18px;
+    line-height:18px;pointer-events:none;
   }
   .card .cd{
     position:absolute;left:0;right:0;top:0;height:0%;
@@ -48,6 +54,7 @@
   }
   .card.disabled{filter:grayscale(.75) brightness(.72);cursor:not-allowed;}
   .card.selected{outline:3px solid #ffe066;box-shadow:0 0 14px #ffe066;}
+  .card.dragging{opacity:.4;outline:2px dashed #ffe066;}   /* ★ 拖拽中外观 */
   #shovelBtn{
     width:46px;height:46px;flex:0 0 auto;background:#3d5c2c;border:2px solid #6b8a52;
     border-radius:8px;cursor:pointer;padding:2px;
@@ -70,7 +77,7 @@
     text-align:center;padding:20px;backdrop-filter:blur(3px);
   }
   #overlay.show{display:flex;}
-  .ov-inner{max-width:560px;}
+  .ov-inner{max-width:580px;}
   #overlay h1{margin:0 0 10px;font-size:30px;letter-spacing:2px;color:#c9f58e;}
   #overlay p{margin:0 0 14px;color:#d8e6cd;font-size:15px;white-space:pre-line;}
   #ovStats{font-size:15px;color:#ffe066;font-weight:700;margin-bottom:16px;white-space:pre-line;}
@@ -81,8 +88,8 @@
   }
   #ovBtn:active{transform:translateY(3px);box-shadow:0 1px 0 #4e7f28;}
   @media(max-width:640px){
-    .card{width:48px;height:64px;}
-    .card img{height:44px;}
+    .card{width:44px;height:62px;}
+    .card img{height:42px;}
     .avatar{width:38px;height:38px;}
     #timerBox{font-size:12px;padding:5px 7px;}
     #sunBox{min-width:64px;font-size:13px;padding:4px 6px;}
@@ -134,10 +141,13 @@ const ASSETS = {
   plant_maotouying:  'plant_maotouying.png',
   plant_hanbing:     'plant_hanbing_shooter.png',
   plant_maotong:     'plant_maotong_wall.png',
+  plant_zunmine:     'plant_zun_mine.png',
+  plant_tankmao:     'plant_tank_mao.png',
   zombie_normal:     'zombie_chun_normal.png',
   zombie_cone:       'zombie_chun_cone.png',
   zombie_bucket:     'zombie_chun_bucket.png',
-  zombie_fast:       'zombie_chun_fast.png'
+  zombie_fast:       'zombie_chun_fast.png',
+  zombie_tank:       'zombie_chun_tank.png'
 };
 
 const IMG = {};
@@ -163,14 +173,12 @@ const LAWN_W = 9 * CELL_W;
 const LAWN_H = ROWS * CELL_H;
 CV.width = 900; CV.height = 560;
 
-/* ★ 种植区：画面左侧 1/4 区域 */
-const PLANT_ZONE_RIGHT = CV.width / 4;     // 225
-const PLANT_MIN_X = 42;                    // 防止植物跑出画面左侧
-const PLANT_MAX_X = PLANT_ZONE_RIGHT;      // 225
-const PLANT_MIN_Y = LAWN_Y + 18;
-const PLANT_MAX_Y = LAWN_Y + LAWN_H - 4;
+/* 全局可耕种 */
+const PLANT_MIN_X = 38;
+const PLANT_MAX_X = CV.width - 38;
+const PLANT_MIN_Y = LAWN_Y + 10;
+const PLANT_MAX_Y = LAWN_Y + LAWN_H - 6;
 
-/* 僵尸走到这里算攻破 */
 const ZOMBIE_GOAL_X = 8;
 
 const BEST_KEY = 'mao_vs_chun_best_time';
@@ -214,18 +222,37 @@ const PLANTS = {
     cost:50, cooldown:15, hp:1500,
     kind:'wall',
     fallback:'#8b6f47'
+  },
+  /* ★ 尊地雷：埋下即生效，踩到就爆 */
+  zunmine: {
+    key:'zunmine', name:'尊地雷', img:'plant_zunmine',
+    cost:150, cooldown:12, hp:300,
+    kind:'mine',
+    killRadius:48,
+    blastRadius:150,
+    maxDamage:900,
+    fallback:'#c94a4a'
+  },
+  /* ★ 坦克茅 */
+  tankmao: {
+    key:'tankmao', name:'坦克茅', img:'plant_tankmao',
+    cost:200, cooldown:25, hp:2000,
+    kind:'tank', speed:90,
+    hitRadiusX:58, hitRadiusY:72,
+    fallback:'#8a9a6a'
   }
 };
-const CARD_ORDER = ['maodou','xiangri','shuibei','maotouying','hanbing','maotong'];
+const CARD_ORDER = ['maodou','xiangri','shuibei','maotouying','hanbing','maotong','zunmine','tankmao'];
 
 /* =========================================================
    4. 僵尸数据
    ========================================================= */
 const ZOMBIES = {
-  normal: { key:'normal', name:'春',       img:'zombie_normal', hp:200, speed:15, dps:30, w:66, h:96, fallback:'#7a9f5a' },
-  cone:   { key:'cone',   name:'路障春',   img:'zombie_cone',   hp:420, speed:15, dps:30, w:66, h:96, fallback:'#6e944f' },
-  bucket: { key:'bucket', name:'铁桶春',   img:'zombie_bucket', hp:820, speed:14, dps:34, w:68, h:98, fallback:'#5f7f45' },
-  fast:   { key:'fast',   name:'疾风春',   img:'zombie_fast',   hp:180, speed:35, dps:26, w:60, h:92, fallback:'#a8c96b' }
+  normal: { key:'normal', name:'春',       img:'zombie_normal', hp:200,  speed:15, dps:30, w:66, h:96,  fallback:'#7a9f5a' },
+  cone:   { key:'cone',   name:'路障春',   img:'zombie_cone',   hp:420,  speed:15, dps:30, w:66, h:96,  fallback:'#6e944f' },
+  bucket: { key:'bucket', name:'铁桶春',   img:'zombie_bucket', hp:820,  speed:14, dps:34, w:68, h:98,  fallback:'#5f7f45' },
+  fast:   { key:'fast',   name:'疾风春',   img:'zombie_fast',   hp:180,  speed:35, dps:26, w:60, h:92,  fallback:'#a8c96b' },
+  tank:   { key:'tank',   name:'坦克春',   img:'zombie_tank',   hp:1400, speed:9,  dps:45, w:86, h:106, fallback:'#4f6040' }
 };
 
 const WORD_POOL = ['操','傻逼','脑瘫','乐子','二货','去死','你妈','傻屌'];
@@ -235,18 +262,20 @@ const WORD_POOL = ['操','傻逼','脑瘫','乐子','二货','去死','你妈','
    ========================================================= */
 let state = {
   sun:100, time:0, running:false, over:false,
-  plants:[], zombies:[], projectiles:[], suns:[],
+  plants:[], zombies:[], projectiles:[], suns:[], explosions:[],
   cooldowns:{}, selected:null,
-  r:20, skySunTimer:5, nextWave:30, waveCount:0,
+  spawnTimer:20, skySunTimer:5, nextWave:30, waveCount:0,
   pending:[], best:0
 };
 let shovelMode = false;
 let mouseX = -999, mouseY = -999;
 
-/* 拖拽 */
 let dragPlant = null;
 let dragOffX = 0, dragOffY = 0;
 let dragOrigX = 0, dragOrigY = 0;
+
+/* ★ 从卡片拖拽种植的状态 */
+let cardDrag = null;
 
 /* =========================================================
    6. 工具
@@ -286,17 +315,35 @@ function saveBest(v){
   try{ localStorage.setItem(BEST_KEY, v.toFixed(2)); }catch(e){}
 }
 
+/* ★ 客户端坐标 → canvas 内部坐标（可能为负/超出边界） */
+function clientToCanvas(cx, cy){
+  const r = CV.getBoundingClientRect();
+  return {
+    x: (cx - r.left) * (CV.width / r.width),
+    y: (cy - r.top)  * (CV.height / r.height)
+  };
+}
+/* ★ 判断客户端坐标是否落在 canvas 矩形内 */
+function isInsideCanvas(cx, cy){
+  const r = CV.getBoundingClientRect();
+  return cx >= r.left && cx <= r.right && cy >= r.top && cy <= r.bottom;
+}
+
 /* =========================================================
    7. 位置合法性
    ========================================================= */
 function isValidPos(x, y, self){
-  if (x < PLANT_MIN_X || x > PLANT_MAX_X) return false;   // 只能在左侧 1/4 内
+  if (x < PLANT_MIN_X || x > PLANT_MAX_X) return false;
   if (y < PLANT_MIN_Y || y > PLANT_MAX_Y) return false;
+
+  if (self && PLANTS[self.type].kind === 'tank') return true;
+
   for (const p of state.plants){
     if (p === self) continue;
+    if (PLANTS[p.type].kind === 'tank') continue;
     const dx = (p.x - x) / 46;
     const dy = (p.y - y) / 54;
-    if (dx*dx + dy*dy < 1) return false;  // 不能与其他植物过度重叠
+    if (dx*dx + dy*dy < 1) return false;
   }
   return true;
 }
@@ -315,14 +362,15 @@ function findPlantIndexAt(x, y){
 function startGame(){
   state = {
     sun:100, time:0, running:true, over:false,
-    plants:[], zombies:[], projectiles:[], suns:[],
-    cooldowns:{ maodou:0, xiangri:0, shuibei:0, maotouying:0, hanbing:0, maotong:0 },
+    plants:[], zombies:[], projectiles:[], suns:[], explosions:[],
+    cooldowns:{ maodou:0, xiangri:0, shuibei:0, maotouying:0, hanbing:0, maotong:0, zunmine:0, tankmao:0 },
     selected:null,
-    spawnTimer:8, skySunTimer:5, nextWave:30, waveCount:0,
+    spawnTimer:6, skySunTimer:5, nextWave:30, waveCount:0,
     pending:[], best:0
   };
   shovelMode = false;
   dragPlant = null;
+  cardDrag = null;
   document.getElementById('shovelBtn').classList.remove('active');
   document.getElementById('overlay').classList.remove('show');
   updateHUD();
@@ -366,6 +414,7 @@ const cardEls = {};
 function buildCards(){
   const box = document.getElementById('cards');
   box.innerHTML = '';
+
   CARD_ORDER.forEach(key=>{
     const def = PLANTS[key];
     const el = document.createElement('div');
@@ -375,13 +424,73 @@ function buildCards(){
       '<img src="' + ASSETS[def.img] + '" alt="" onerror="this.style.visibility=\'hidden\'">' +
       '<div class="cost">' + def.cost + '</div>' +
       '<div class="cd"></div>';
-    el.addEventListener('click', ()=>{
-      if (!state.running) return;
-      state.selected = (state.selected === key) ? null : key;
-      shovelMode = false;
-      document.getElementById('shovelBtn').classList.remove('active');
-      updateHUD();
+
+    /* ★ 统一用 pointer 事件处理：轻点=选中，拖动=直接种植 */
+    el.addEventListener('pointerdown', ev=>{
+      if (!state.running || state.over) return;
+      const d = PLANTS[key];
+      if (state.cooldowns[key] > 0 || state.sun < d.cost) return;  /* 不可用则不拖 */
+      ev.preventDefault();
+
+      const p0 = clientToCanvas(ev.clientX, ev.clientY);
+      cardDrag = {
+        key: key,
+        pointerId: ev.pointerId,
+        startClientX: ev.clientX,
+        startClientY: ev.clientY,
+        x: p0.x, y: p0.y,
+        moved: false
+      };
+      el.classList.add('dragging');
+      try{ el.setPointerCapture(ev.pointerId); }catch(_){}
     });
+
+    el.addEventListener('pointermove', ev=>{
+      if (!cardDrag || cardDrag.pointerId !== ev.pointerId) return;
+
+      const dx = ev.clientX - cardDrag.startClientX;
+      const dy = ev.clientY - cardDrag.startClientY;
+      if (!cardDrag.moved && Math.hypot(dx, dy) > 6){
+        cardDrag.moved = true;
+        /* 进入拖拽，清掉"点选"状态，避免视觉冲突 */
+        if (state.selected === cardDrag.key) state.selected = null;
+        updateHUD();
+      }
+
+      const p = clientToCanvas(ev.clientX, ev.clientY);
+      cardDrag.x = p.x;
+      cardDrag.y = p.y;
+      mouseX = p.x; mouseY = p.y;
+    });
+
+    function finishCardDrag(ev, cancelled){
+      if (!cardDrag || cardDrag.pointerId !== ev.pointerId) return;
+      const cd = cardDrag;
+      cardDrag = null;
+      const cel = cardEls[cd.key];
+      if (cel) cel.classList.remove('dragging');
+
+      if (cancelled) return;
+      if (!state.running || state.over) return;
+
+      if (cd.moved){
+        /* ★ 拖动结束 → 若松手在草坪内，直接种植 */
+        if (!isInsideCanvas(ev.clientX, ev.clientY)) return;
+        const p = clientToCanvas(ev.clientX, ev.clientY);
+        state.selected = null;
+        tryPlacePlant(p.x, p.y, cd.key);
+      }else{
+        /* ★ 只是轻点 → 切换选中 */
+        state.selected = (state.selected === cd.key) ? null : cd.key;
+        shovelMode = false;
+        document.getElementById('shovelBtn').classList.remove('active');
+        updateHUD();
+      }
+    }
+
+    el.addEventListener('pointerup', ev=>finishCardDrag(ev, false));
+    el.addEventListener('pointercancel', ev=>finishCardDrag(ev, true));
+
     box.appendChild(el);
     cardEls[key] = el;
   });
@@ -409,6 +518,8 @@ function updateHUD(){
 /* =========================================================
    10. 生成逻辑
    ========================================================= */
+
+/* ★ 普通僵尸：100 秒后 10% 概率从右侧「大跳」到中场 */
 function spawnZombie(){
   const t = state.time;
   const pool = [['normal',10]];
@@ -426,12 +537,45 @@ function spawnZombie(){
 
   const row = Math.floor(Math.random()*ROWS);
   const def = ZOMBIES[type];
+  const baseY = LAWN_Y + row*CELL_H + CELL_H/2 + 8;
+
+  const jumpMid = t > 100 && Math.random() < 0.10;
+  const startX = CV.width + 40;
+  const endX   = CV.width * rand(0.46, 0.56);
+
   state.zombies.push({
     type, row,
-    x: CV.width + 40,
-    y: LAWN_Y + row*CELL_H + CELL_H/2 + 8,
+    x: startX,
+    y: baseY,
     hp: def.hp, maxHp: def.hp,
-    slowTimer:0, hitFlash:0, walkT: Math.random()*10, eating:false
+    slowTimer:0, hitFlash:0, walkT: Math.random()*10, eating:false,
+
+    jumping: jumpMid,
+    jumpT: 0,
+    jumpDur: 0.95,
+    jumpStartX: startX,
+    jumpStartY: baseY,
+    jumpEndX: endX,
+    jumpEndY: baseY,
+    drawYOffset: 0,
+    jumpFlash: 0
+  });
+}
+
+/* ★ 坦克僵尸：仅在种下坦克茅时刷，同 y 道 */
+function spawnTankZombieOnRow(y){
+  const def = ZOMBIES.tank;
+  state.zombies.push({
+    type: 'tank',
+    row: -1,
+    x: CV.width + 40,
+    y: y,
+    hp: def.hp, maxHp: def.hp,
+    slowTimer:0, hitFlash:0, walkT: Math.random()*10, eating:false,
+    jumping: false,
+    jumpT: 0, jumpDur: 0,
+    drawYOffset: 0,
+    jumpFlash: 0
   });
 }
 
@@ -455,14 +599,14 @@ function spawnLogic(dt){
   state.spawnTimer -= dt;
   if (state.spawnTimer <= 0){
     const t = state.time;
-    state.spawnTimer = Math.max(1.3, 6.8 - t*0.035) * rand(0.88, 1.22);
+    state.spawnTimer = Math.max(5.5, 12 - t*0.064) * rand(0.85, 1.15);
     spawnZombie();
-    if (t > 55 && Math.random() < 0.48) spawnZombie();
   }
+
   if (state.time >= state.nextWave){
     state.nextWave += 40;
     state.waveCount++;
-    const n = 3 + Math.floor(state.waveCount / 2.5);
+    const n = Math.max(2, Math.round((4 + state.waveCount) * 0.67));
     for (let i=0;i<n;i++) state.pending.push({ t: i*0.35 });
   }
   for (let i=state.pending.length-1;i>=0;i--){
@@ -472,6 +616,7 @@ function spawnLogic(dt){
       state.pending.splice(i,1);
     }
   }
+
   state.skySunTimer -= dt;
   if (state.skySunTimer <= 0){
     state.skySunTimer = rand(8,12);
@@ -480,26 +625,37 @@ function spawnLogic(dt){
 }
 
 /* =========================================================
-   11. 更新（基于实际 y 距离，不再依赖格子行）
+   11. 更新
    ========================================================= */
-
-/* 找植物右侧、y 接近的最近僵尸 */
 function nearestZombie(y, x){
   let best = null, bestScore = Infinity;
   for (const z of state.zombies){
     if (z.hp <= 0) continue;
     if (z.x < x - 10) continue;
     const dy = Math.abs(z.y - y);
-    if (dy > 84) continue;              // y 距离太远，无视
+    if (dy > 84) continue;
     const score = z.x + dy * 2;
     if (score < bestScore){ bestScore = score; best = z; }
   }
   return best;
 }
 
-/* 是否有 y 接近、且在右侧的僵尸 */
 function hasZombieNear(y, x){
   return nearestZombie(y, x) !== null;
+}
+
+function explodeMine(p, def){
+  state.explosions.push({ x:p.x, y:p.y, t:0, maxT:0.55, radius:def.blastRadius });
+  for (const z of state.zombies){
+    if (z.hp <= 0) continue;
+    const d = Math.hypot(z.x - p.x, z.y - p.y);
+    if (d < def.killRadius){
+      damageZombie(z, 99999, false);
+    }else if (d < def.blastRadius){
+      const k = 1 - (d - def.killRadius) / (def.blastRadius - def.killRadius);
+      damageZombie(z, Math.round(def.maxDamage * k), false);
+    }
+  }
 }
 
 function updatePlants(dt){
@@ -548,6 +704,31 @@ function updatePlants(dt){
         }
       }
     }
+    /* 尊地雷：僵尸踩到立刻引爆 */
+    else if (def.kind === 'mine'){
+      for (const z of state.zombies){
+        if (z.hp <= 0) continue;
+        if (z.jumping) continue;
+        if (Math.abs(z.x - p.x) < 42 && Math.abs(z.y - p.y) < 56){
+          explodeMine(p, def);
+          p.hp = 0;
+          break;
+        }
+      }
+    }
+    /* 坦克茅：向右行驶碾压 */
+    else if (def.kind === 'tank'){
+      p.x += def.speed * dt;
+      for (const z of state.zombies){
+        if (z.hp <= 0) continue;
+        if (z.type === 'tank') continue;
+        if (Math.abs(z.x - p.x) < def.hitRadiusX &&
+            Math.abs(z.y - p.y) < def.hitRadiusY){
+          damageZombie(z, 99999, false);
+        }
+      }
+      if (p.x > CV.width + 120) p.hp = 0;
+    }
   }
   state.plants = state.plants.filter(p => p.hp > 0);
 }
@@ -565,12 +746,32 @@ function updateZombies(dt){
     const def = ZOMBIES[z.type];
 
     if (z.slowTimer > 0) z.slowTimer -= dt;
+
+    /* 大跳中 */
+    if (z.jumping){
+      z.jumpT += dt;
+      const p = Math.min(1, z.jumpT / z.jumpDur);
+      z.x = z.jumpStartX + (z.jumpEndX - z.jumpStartX) * p;
+      z.y = z.jumpStartY + (z.jumpEndY - z.jumpStartY) * p;
+      z.drawYOffset = -Math.sin(p * Math.PI) * 170;
+      z.walkT += dt * 10;
+
+      if (z.hitFlash > 0) z.hitFlash -= dt;
+
+      if (p >= 1){
+        z.jumping = false;
+        z.drawYOffset = 0;
+        z.jumpFlash = 0.5;
+      }
+      continue;
+    }
+
     const speedMul = z.slowTimer > 0 ? 0.5 : 1;
 
-    /* 找要啃的植物：y 接近且在僵尸前方 */
     let target = null;
     for (const p of state.plants){
       if (p.hp <= 0) continue;
+      if (PLANTS[p.type].kind === 'tank') continue;
       const d = z.x - p.x;
       if (d > -14 && d < 42 && Math.abs(z.y - p.y) < 58){
         if (!target || p.x > target.x) target = p;
@@ -586,9 +787,9 @@ function updateZombies(dt){
     }
 
     if (z.hitFlash > 0) z.hitFlash -= dt;
+    if (z.jumpFlash > 0) z.jumpFlash -= dt;
     z.walkT += dt * (z.eating ? 2.5 : 6) * speedMul;
 
-    /* 僵尸走到最左侧 → 攻破 */
     if (z.x < ZOMBIE_GOAL_X){
       gameOver();
       return;
@@ -645,6 +846,14 @@ function updateSuns(dt){
   state.suns = state.suns.filter(s => !s.dead);
 }
 
+function updateExplosions(dt){
+  for (const e of state.explosions){
+    e.t += dt;
+    if (e.t >= e.maxT) e.dead = true;
+  }
+  state.explosions = state.explosions.filter(e => !e.dead);
+}
+
 function update(dt){
   state.time += dt;
 
@@ -659,6 +868,7 @@ function update(dt){
   if (state.over) return;
   updateProjectiles(dt);
   updateSuns(dt);
+  updateExplosions(dt);
   spawnLogic(dt);
   updateHUD();
 }
@@ -682,40 +892,18 @@ function drawBackground(){
     ctx.fillStyle = '#3a5a28';
     ctx.fillRect(0,0,LAWN_X,CV.height);
   }
-
-  /* ★ 左侧 1/4 种植区高亮 */
-  ctx.save();
-  ctx.fillStyle = 'rgba(140,255,120,0.10)';
-  ctx.fillRect(0, 0, PLANT_ZONE_RIGHT, CV.height);
-
-  ctx.strokeStyle = 'rgba(140,255,120,0.70)';
-  ctx.lineWidth = 3;
-  ctx.setLineDash([14, 10]);
-  ctx.beginPath();
-  ctx.moveTo(PLANT_ZONE_RIGHT, 0);
-  ctx.lineTo(PLANT_ZONE_RIGHT, CV.height);
-  ctx.stroke();
-  ctx.setLineDash([]);
-
-  ctx.font = 'bold 15px "PingFang SC","Microsoft YaHei",sans-serif';
-  ctx.fillStyle = 'rgba(160,255,140,0.85)';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText('种 植 区', PLANT_ZONE_RIGHT/2, 22);
-  ctx.font = '11px sans-serif';
-  ctx.fillStyle = 'rgba(180,255,160,0.65)';
-  ctx.fillText('（左侧 1/4）', PLANT_ZONE_RIGHT/2, 40);
-  ctx.restore();
 }
 
 function drawPlant(p){
   const def = PLANTS[p.type];
   const w = 76, h = 92;
 
-  ctx.fillStyle = 'rgba(0,0,0,.22)';
-  ctx.beginPath();
-  ctx.ellipse(p.x, p.y + 42, 27, 9, 0, 0, Math.PI*2);
-  ctx.fill();
+  if (def.kind !== 'tank'){
+    ctx.fillStyle = 'rgba(0,0,0,.22)';
+    ctx.beginPath();
+    ctx.ellipse(p.x, p.y + 42, 27, 9, 0, 0, Math.PI*2);
+    ctx.fill();
+  }
 
   const breathe = def.kind === 'wall' ? 1 : 1 + Math.sin(p.t*3) * 0.018;
   const dw = w * breathe, dh = h * breathe;
@@ -725,8 +913,9 @@ function drawPlant(p){
     ctx.globalAlpha = 0.9;
   }
   drawAsset(IMG[def.img], p.x - dw/2, p.y - dh/2 + 8, dw, dh, def.fallback);
+  if (dragPlant === p) ctx.restore();
+
   if (dragPlant === p){
-    ctx.restore();
     ctx.save();
     ctx.strokeStyle = isValidPos(p.x, p.y, p) ? '#8dff6b' : '#ff5a5a';
     ctx.lineWidth = 2;
@@ -750,13 +939,37 @@ function drawZombie(z){
   const def = ZOMBIES[z.type];
   const w = def.w, h = def.h;
   const bob = z.eating ? Math.sin(z.walkT*8)*2 : Math.sin(z.walkT)*3;
+  const yOff = z.drawYOffset || 0;
   const x = z.x - w/2;
-  const y = z.y - h/2 + bob;
+  const y = z.y - h/2 + bob + yOff;
 
-  ctx.fillStyle = 'rgba(0,0,0,.25)';
-  ctx.beginPath();
-  ctx.ellipse(z.x, z.y + h/2 - 6, 24, 8, 0, 0, Math.PI*2);
-  ctx.fill();
+  if (!z.jumping){
+    ctx.fillStyle = 'rgba(0,0,0,.25)';
+    ctx.beginPath();
+    ctx.ellipse(z.x, z.y + h/2 - 6, 24, 8, 0, 0, Math.PI*2);
+    ctx.fill();
+  }else{
+    const alt = -yOff / 170;
+    ctx.save();
+    ctx.globalAlpha = 0.22 * (1 - alt);
+    ctx.fillStyle = '#000';
+    ctx.beginPath();
+    ctx.ellipse(z.x, z.jumpEndY + h/2 - 6, 24 * (1 - alt*0.5), 8 * (1 - alt*0.5), 0, 0, Math.PI*2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  if (z.jumpFlash > 0){
+    const p = 1 - z.jumpFlash / 0.5;
+    ctx.save();
+    ctx.globalAlpha = (1 - p) * 0.85;
+    ctx.strokeStyle = '#aaddff';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(z.x, z.y, 30 + p * 60, 0, Math.PI*2);
+    ctx.stroke();
+    ctx.restore();
+  }
 
   drawAsset(IMG[def.img], x, y, w, h, def.fallback);
 
@@ -826,24 +1039,51 @@ function drawSun(s){
   ctx.restore();
 }
 
+function drawExplosions(){
+  for (const e of state.explosions){
+    const p = e.t / e.maxT;
+    const r = e.radius * (0.35 + p * 0.65);
+    const a = 1 - p;
+    ctx.save();
+    ctx.globalAlpha = a * 0.75;
+    const g = ctx.createRadialGradient(e.x, e.y, r*0.15, e.x, e.y, r);
+    g.addColorStop(0,   'rgba(255,255,200,0.95)');
+    g.addColorStop(0.4, 'rgba(255,170,60,0.75)');
+    g.addColorStop(1,   'rgba(200,40,20,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(e.x, e.y, r, 0, Math.PI*2);
+    ctx.fill();
+    ctx.globalAlpha = a;
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = 'rgba(255,240,180,0.9)';
+    ctx.beginPath();
+    ctx.arc(e.x, e.y, r*0.92, 0, Math.PI*2);
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
 function render(){
   drawBackground();
 
   const drawList = [];
   state.plants.forEach(p => drawList.push({ y: p.y, fn: ()=>drawPlant(p) }));
-  state.zombies.forEach(z => drawList.push({ y: z.y, fn: ()=>drawZombie(z) }));
+  state.zombies.forEach(z => drawList.push({ y: z.y + (z.jumping ? -200 : 0), fn: ()=>drawZombie(z) }));
   drawList.sort((a,b)=>a.y-b.y);
   drawList.forEach(d => d.fn());
 
   state.projectiles.forEach(drawProjectile);
   state.suns.forEach(drawSun);
+  drawExplosions();
 
-  /* 鼠标跟随预览 */
-  if (state.running && state.selected && mouseX > 0){
-    const def = PLANTS[state.selected];
+  /* ★ 幽灵预览：选中卡片 或 正在从卡片拖拽 */
+  const previewKey = cardDrag ? cardDrag.key : state.selected;
+  if (state.running && !state.over && previewKey && mouseX > -100){
+    const def = PLANTS[previewKey];
     const valid = isValidPos(mouseX, mouseY, null);
     ctx.save();
-    ctx.globalAlpha = 0.5;
+    ctx.globalAlpha = 0.55;
     drawAsset(IMG[def.img], mouseX-38, mouseY-46+8, 76, 92, def.fallback);
     ctx.restore();
 
@@ -875,7 +1115,7 @@ function loop(ts){
 }
 
 /* =========================================================
-   14. 交互（自由摆放 + 拖拽调整，种植区限制在左侧 1/4）
+   14. 交互
    ========================================================= */
 function toCanvas(e){
   const r = CV.getBoundingClientRect();
@@ -895,9 +1135,14 @@ function tryPlacePlant(x, y, key){
     type: key,
     x: x, y: y,
     hp: def.hp, maxHp: def.hp,
-    cd: def.kind === 'sun' ? 5 : 0.5,
+    cd: def.kind === 'sun' ? 5 : (def.kind === 'mine' ? 0 : 0.5),
     t: Math.random()*6
   });
+
+  /* 种下坦克茅 → 同一条道上立刻刷一只坦克僵尸 */
+  if (key === 'tankmao'){
+    spawnTankZombieOnRow(y);
+  }
 
   state.sun -= def.cost;
   state.cooldowns[key] = def.cooldown;
@@ -908,6 +1153,7 @@ function tryPlacePlant(x, y, key){
 
 CV.addEventListener('pointerdown', e=>{
   if (!state.running || state.over) return;
+  if (cardDrag) return;   /* 从卡片拖拽时不响应画布按下 */
   e.preventDefault();
   const p = toCanvas(e);
   mouseX = p.x; mouseY = p.y;
@@ -934,7 +1180,7 @@ CV.addEventListener('pointerdown', e=>{
     return;
   }
 
-  /* 3. 抓起已有植物 → 拖拽调整 */
+  /* 3. 拖动已有植物 */
   const idx = findPlantIndexAt(p.x, p.y);
   if (idx >= 0){
     dragPlant = state.plants[idx];
@@ -947,13 +1193,14 @@ CV.addEventListener('pointerdown', e=>{
     return;
   }
 
-  /* 4. 种植新植物 */
+  /* 4. 已选中 → 点击草坪直接种植 */
   if (state.selected){
     tryPlacePlant(p.x, p.y, state.selected);
   }
 });
 
 CV.addEventListener('pointermove', e=>{
+  if (cardDrag) return;
   const p = toCanvas(e);
   mouseX = p.x; mouseY = p.y;
 
@@ -985,11 +1232,13 @@ function endDrag(e){
 }
 
 CV.addEventListener('pointerup', e=>{
+  if (cardDrag) return;
   e.preventDefault();
   endDrag(e);
 });
 
 CV.addEventListener('pointercancel', e=>{
+  if (cardDrag) return;
   if (dragPlant){
     dragPlant.x = dragOrigX;
     dragPlant.y = dragOrigY;
@@ -998,6 +1247,7 @@ CV.addEventListener('pointercancel', e=>{
 });
 
 CV.addEventListener('pointerleave', ()=>{
+  if (cardDrag) return;
   if (dragPlant){
     dragPlant.x = dragOrigX;
     dragPlant.y = dragOrigY;
@@ -1024,6 +1274,11 @@ document.addEventListener('keydown', e=>{
       dragPlant.y = dragOrigY;
       dragPlant = null;
     }
+    if (cardDrag){
+      const el = cardEls[cardDrag.key];
+      if (el) el.classList.remove('dragging');
+      cardDrag = null;
+    }
     updateHUD();
   }
 });
@@ -1037,10 +1292,15 @@ Promise.all(
   buildCards();
   const best = loadBest();
   showOverlay(
-    '茅 vs 春',
-    '植物只能种在左侧 1/4 的「种植区」内，但位置完全自由！\n' +
-    '点击卡片 → 点击种植区任意位置种植；\n' +
-    '按住植物拖动可随时调整位置。\n' +
+    'MVC 2.0发布！',
+    '植物大战僵尸自制版）第二版发布！\n' +
+    '更新1：按住卡片直接拖到草坪松手即可种植；\n' +
+    '　　　　也可以点卡片→点草坪。\n' +
+    '更新2：按住已种下的植物可拖动调整位置。\n' +
+    '更新3：尊地雷，埋下即生效，僵尸踩上就会爆炸。\n' +
+    '更新4：坦克茅：种下后自动向右行驶，压死所有僵尸——\n' +
+    '　　　　但会引来一只「坦克僵尸」在同一道上走来（它免疫碾压）。\n' +
+    '100 秒后，约 10% 的僵尸会从画面右侧「大跳」到中场\n' +
     '挡住「春」，别让它们走到最左边！',
     best > 0 ? '历史最长存活：' + best.toFixed(1) + ' 秒' : '历史最长存活：——',
     '开始防守',
