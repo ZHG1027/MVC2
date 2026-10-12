@@ -54,8 +54,6 @@
   .card.disabled{filter:grayscale(.75) brightness(.72);cursor:not-allowed;}
   .card.selected{outline:3px solid #ffe066;box-shadow:0 0 14px #ffe066;}
   .card.dragging{opacity:.4;outline:2px dashed #ffe066;}
-
-  /* ★ 卡片栏左右箭头 */
   .arrowBtn{
     width:32px;height:46px;flex:0 0 auto;
     background:#3d5c2c;border:2px solid #6b8a52;
@@ -67,15 +65,12 @@
   }
   .arrowBtn:active{background:#5a7d40;transform:scale(.94);}
   .arrowBtn:disabled{opacity:.35;cursor:not-allowed;}
-
   #shovelBtn{
     width:46px;height:46px;flex:0 0 auto;background:#3d5c2c;border:2px solid #6b8a52;
     border-radius:8px;cursor:pointer;padding:2px;
   }
   #shovelBtn.active{outline:3px solid #ffe066;box-shadow:0 0 12px #ffe066;}
   #shovelBtn img{width:100%;height:100%;object-fit:contain;}
-
-  /* ★ 暂停键 */
   #pauseBtn{
     width:46px;height:46px;flex:0 0 auto;
     background:#3d5c2c;border:2px solid #6b8a52;border-radius:8px;
@@ -86,7 +81,6 @@
   }
   #pauseBtn:active{background:#5a7d40;}
   #pauseBtn.active{outline:3px solid #ffe066;box-shadow:0 0 12px #ffe066;background:#7a5a20;}
-
   #timerBox{
     background:#16240f;padding:6px 10px;border-radius:8px;font-weight:800;
     color:#b6f08a;white-space:nowrap;font-variant-numeric:tabular-nums;
@@ -113,6 +107,22 @@
     box-shadow:0 4px 0 #4e7f28;transition:.08s;
   }
   #ovBtn:active{transform:translateY(3px);box-shadow:0 1px 0 #4e7f28;}
+
+  /* ★ 开发者工具防护覆盖层 */
+  #devGuard{
+    position:fixed;inset:0;z-index:999999;
+    background:#0a0a0a;color:#fff;
+    display:none;align-items:center;justify-content:center;flex-direction:column;
+    font-family:system-ui,"PingFang SC","Microsoft YaHei",sans-serif;
+    text-align:center;padding:24px;
+    background-image:repeating-linear-gradient(45deg,rgba(255,0,0,.05) 0 20px,transparent 20px 40px);
+  }
+  #devGuard.show{display:flex;}
+  #devGuard .ico{font-size:72px;line-height:1;margin-bottom:16px;color:#ff5555;}
+  #devGuard h2{margin:0 0 14px;color:#ff5555;font-size:26px;letter-spacing:2px;}
+  #devGuard p{margin:0 0 8px;color:#bbb;max-width:480px;line-height:1.7;font-size:14px;}
+  #devGuard .hint{margin-top:20px;color:#666;font-size:12px;}
+
   @media(max-width:640px){
     .card{width:44px;height:62px;}
     .card img{height:42px;}
@@ -130,7 +140,6 @@
     <img class="avatar" src="mao.png" alt="茅">
     <div id="sunBox"><img src="sun.png" alt=""><span id="sunCount">100</span></div>
 
-    <!-- ★ 卡片栏左箭头 -->
     <button class="arrowBtn" id="arrowLeft" title="向左滚动">
       <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
         <path d="M15 5 L8 12 L15 19" stroke="currentColor" stroke-width="3"
@@ -140,7 +149,6 @@
 
     <div id="cards"></div>
 
-    <!-- ★ 卡片栏右箭头 -->
     <button class="arrowBtn" id="arrowRight" title="向右滚动">
       <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
         <path d="M9 5 L16 12 L9 19" stroke="currentColor" stroke-width="3"
@@ -150,7 +158,6 @@
 
     <button id="shovelBtn" title="铲除植物"><img src="shovel.png" alt="铲"></button>
 
-    <!-- ★ 暂停键 -->
     <button id="pauseBtn" title="暂停 / 继续"></button>
 
     <div id="timerBox">存活 <span id="timer">0.0</span>s</div>
@@ -169,9 +176,96 @@
   </div>
 </div>
 
+<!-- ★ 开发者工具防护 -->
+<div id="devGuard">
+  <div class="ico">⚠</div>
+  <h2>检 测 到 开 发 者 工 具</h2>
+  <p>为了防止（林傻宝）篡改代码，请不要在此页面上使用开发者工具。</p>
+  <p>请关闭 DevTools/开发者工具 后继续游戏。</p>
+  <div class="hint">此页面受保护</div>
+</div>
+
 <script>
 (function(){
 'use strict';
+
+/* =========================================================
+   0. ★ 开发者工具防护
+   ---------------------------------------------------------
+   注意：无法 100% 阻止，只能拦下普通用户。
+   ========================================================= */
+(function devGuard(){
+  const el = document.getElementById('devGuard');
+  let tripped = false;
+
+  function trip(){
+    if (tripped) return;
+    tripped = true;
+    el.classList.add('show');
+    /* 顺带把游戏暂停 */
+    try{
+      if (state && state.running && !state.over && !state.paused){
+        state.paused = true;
+        if (typeof updatePauseButton === 'function') updatePauseButton();
+      }
+    }catch(_){}
+  }
+
+  function calm(){
+    if (!tripped) return;
+    tripped = false;
+    el.classList.remove('show');
+  }
+
+  /* ① 窗口尺寸差检测（DevTools 停靠打开 → 尺寸差突然变大） */
+  const THRESHOLD = 220;
+  function sizeCheck(){
+    try{
+      if (typeof window.outerWidth !== 'number') return;
+      const dw = window.outerWidth  - window.innerWidth;
+      const dh = window.outerHeight - window.innerHeight;
+      if (dw > THRESHOLD || dh > THRESHOLD || dw < -100 || dh < -100){
+        trip();
+      }else{
+        calm();
+      }
+    }catch(_){}
+  }
+  setInterval(sizeCheck, 900);
+
+  /* ② 拦截快捷键 */
+  document.addEventListener('keydown', function(e){
+    const k = e.key;
+    /* F12 */
+    if (k === 'F12'){ e.preventDefault(); e.stopPropagation(); trip(); return false; }
+    /* Ctrl+Shift+I / J / C / K */
+    if (e.ctrlKey && e.shiftKey && /^[ijckIJKC]$/.test(k)){
+      e.preventDefault(); e.stopPropagation(); trip(); return false;
+    }
+    /* Ctrl+U（查看源码） */
+    if (e.ctrlKey && (k === 'u' || k === 'U')){ e.preventDefault(); return false; }
+    /* Cmd+Alt+I / J / C（Mac） */
+    if (e.metaKey && e.altKey && /^[ijcIJ C]$/.test(k)){
+      e.preventDefault(); e.stopPropagation(); trip(); return false;
+    }
+  }, true);
+
+  /* ③ 拦截右键菜单 */
+  document.addEventListener('contextmenu', function(e){
+    e.preventDefault();
+    return false;
+  }, true);
+
+  /* ④ 拦截文本选择 / 拖拽（防复制代码） */
+  document.addEventListener('selectstart', function(e){
+    const tag = (e.target && e.target.tagName) || '';
+    if (tag !== 'INPUT' && tag !== 'TEXTAREA') e.preventDefault();
+  });
+  document.addEventListener('dragstart', function(e){ e.preventDefault(); });
+
+  /* ⑤ 控制台清屏小把戏（可选，防止在控制台里轻易看到变量名） */
+  // 不启用 debugger，避免误伤正常用户
+})();
 
 /* =========================================================
    1. 资源清单
@@ -235,6 +329,9 @@ const ZOMBIE_GOAL_X = 8;
 const DENSITY_RAMP_TIME = 300;
 const DENSITY_RAMP_MULT = 4.0;
 
+/* ★ 坦克茅视觉尺寸 */
+const TANK_SIZE = 150;
+
 const BEST_KEY = 'mao_vs_chun_best_time';
 
 /* =========================================================
@@ -248,7 +345,7 @@ const PLANTS = {
   hanbing:   { key:'hanbing',   name:'寒冰射手',   img:'plant_hanbing',   cost:150, cooldown:8,   hp:300,  kind:'shooter', interval:1.4, damage:20, projSpeed:520, proj:'ice', slow:true, fallback:'#6fd3ea' },
   maotong:   { key:'maotong',   name:'茂桐墙',     img:'plant_maotong',   cost:50,  cooldown:15,  hp:1500, kind:'wall',    fallback:'#8b6f47' },
   zunmine:   { key:'zunmine',   name:'尊地雷',     img:'plant_zunmine',   cost:150, cooldown:12,  hp:300,  kind:'mine',    killRadius:48, blastRadius:150, maxDamage:900, fallback:'#c94a4a' },
-  tankmao:   { key:'tankmao',   name:'坦克茅',     img:'plant_tankmao',   cost:200, cooldown:25,  hp:2000, kind:'tank',    speed:90, hitRadiusX:58, hitRadiusY:72, fallback:'#8a9a6a' },
+  tankmao:   { key:'tankmao',   name:'坦克茅',     img:'plant_tankmao',   cost:250, cooldown:25,  hp:2000, kind:'tank',    speed:90, hitRadiusX:90, hitRadiusY:85, fallback:'#8a9a6a' },
   maodan:    { key:'maodan',    name:'茅弹',       img:'plant_maodan',    cost:550, cooldown:180, hp:1,    kind:'bomb',    fallback:'#ff6b6b' }
 };
 const CARD_ORDER = ['maodou','xiangri','shuibei','maotouying','hanbing','maotong','zunmine','tankmao','maodan'];
@@ -314,6 +411,12 @@ function drawAsset(img,x,y,w,h,fallback){
   }
 }
 
+/* ★ 按类型返回植物视觉尺寸 */
+function getPlantSize(key){
+  if (PLANTS[key] && PLANTS[key].kind === 'tank') return { w: TANK_SIZE, h: TANK_SIZE };
+  return { w: 76, h: 92 };
+}
+
 function loadBest(){
   const v = parseFloat(localStorage.getItem(BEST_KEY));
   return isNaN(v) ? 0 : v;
@@ -336,15 +439,18 @@ function easeOutBack(t){
 
 /* =========================================================
    7. 位置合法性
+   ---------------------------------------------------------
+   ★ 坦克茅也全屏可种
    ========================================================= */
 function isValidPos(x, y, plant){
   if (y < PLANT_MIN_Y || y > PLANT_MAX_Y) return false;
   if (x < PLANT_MIN_X) return false;
   const key = plant && plant.type;
-  const isGlobal = (key === 'zunmine' || key === 'maodan');
+  const isGlobal = (key === 'zunmine' || key === 'maodan' || key === 'tankmao');
   if (isGlobal){
     if (x > PLANT_MAX_X) return false;
-    if (key === 'maodan') return true;
+    /* 茅弹、坦克茅不做重叠检查 */
+    if (key === 'maodan' || key === 'tankmao') return true;
   }else{
     if (x > PLANT_ZONE_RIGHT) return false;
   }
@@ -362,7 +468,10 @@ function isValidPos(x, y, plant){
 function findPlantIndexAt(x, y){
   for (let i=state.plants.length-1; i>=0; i--){
     const p = state.plants[i];
-    if (Math.abs(p.x - x) < 42 && Math.abs(p.y + 6 - y) < 52) return i;
+    const s = getPlantSize(p.type);
+    const hitX = s.w / 2 + 6;
+    const hitY = s.h / 2 + 8;
+    if (Math.abs(p.x - x) < hitX && Math.abs(p.y + 6 - y) < hitY) return i;
   }
   return -1;
 }
@@ -440,7 +549,7 @@ function buildCards(){
       '<div class="cd"></div>';
 
     el.addEventListener('pointerdown', ev=>{
-      if (!state.running || state.over || state.paused) return;   /* ★ 暂停时不响应 */
+      if (!state.running || state.over || state.paused) return;
       const d = PLANTS[key];
       if (state.cooldowns[key] > 0 || state.sun < d.cost) return;
       ev.preventDefault();
@@ -696,8 +805,8 @@ function updatePlants(dt){
       for (const z of state.zombies){
         if (z.hp <= 0) continue;
         if (z.type !== 'tank') continue;
-        if (Math.abs(z.x - p.x) < def.hitRadiusX + 26 &&
-            Math.abs(z.y - p.y) < def.hitRadiusY){
+        if (Math.abs(z.x - p.x) < def.hitRadiusX + 20 &&
+            Math.abs(z.y - p.y) < def.hitRadiusY + 10){
           blockedByTank = z; break;
         }
       }
@@ -752,7 +861,7 @@ function updateZombies(dt){
       for (const p of state.plants){
         if (p.hp <= 0) continue;
         if (PLANTS[p.type].kind !== 'tank') continue;
-        if (Math.abs(p.x - z.x) < 90 && Math.abs(p.y - z.y) < 72){
+        if (Math.abs(p.x - z.x) < 110 && Math.abs(p.y - z.y) < 95){
           blockedByTank = p; break;
         }
       }
@@ -919,7 +1028,7 @@ function drawBackground(){
   ctx.fillText('种 植 区', PLANT_ZONE_RIGHT/2, 22);
   ctx.font = '11px sans-serif';
   ctx.fillStyle = 'rgba(180,255,160,0.65)';
-  ctx.fillText('（左侧 1/4；尊地雷 / 茅弹可全屏）', PLANT_ZONE_RIGHT/2, 40);
+  ctx.fillText('（左侧 1/4；地雷 / 茅弹 / 坦克 可全屏）', PLANT_ZONE_RIGHT/2, 40);
   ctx.restore();
 }
 
@@ -973,15 +1082,19 @@ function drawDialogBubble(x, y, text, scale, alpha){
 
 function drawPlant(p){
   const def = PLANTS[p.type];
-  const w = 76, h = 92;
+  const sz = getPlantSize(p.type);
+  const w = sz.w, h = sz.h;
+
   if (def.kind !== 'tank'){
     ctx.fillStyle = 'rgba(0,0,0,.22)';
     ctx.beginPath();
     ctx.ellipse(p.x, p.y + 42, 27, 9, 0, 0, Math.PI*2);
     ctx.fill();
   }
+
   const breathe = def.kind === 'wall' ? 1 : 1 + Math.sin(p.t*3) * 0.018;
   const dw = w * breathe, dh = h * breathe;
+
   if (dragPlant === p){ ctx.save(); ctx.globalAlpha = 0.9; }
   drawAsset(IMG[def.img], p.x - dw/2, p.y - dh/2 + 8, dw, dh, def.fallback);
   if (dragPlant === p) ctx.restore();
@@ -991,7 +1104,7 @@ function drawPlant(p){
     ctx.strokeStyle = isValidPos(p.x, p.y, p) ? '#8dff6b' : '#ff5a5a';
     ctx.lineWidth = 2;
     ctx.setLineDash([7,5]);
-    ctx.strokeRect(p.x - 40, p.y - 48, 80, 96);
+    ctx.strokeRect(p.x - dw/2, p.y - dh/2 + 8 - 6, dw, dh + 12);
     ctx.restore();
   }
   if (p.hp < p.maxHp){
@@ -1179,29 +1292,22 @@ function drawExplosions(){
   }
 }
 
-/* ★ 暂停时覆盖层 */
 function drawPausedOverlay(){
   ctx.save();
   ctx.fillStyle = 'rgba(0,0,0,0.55)';
   ctx.fillRect(0, 0, CV.width, CV.height);
-
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-
   ctx.font = 'bold 52px "PingFang SC","Microsoft YaHei",sans-serif';
   ctx.fillStyle = '#c9f58e';
   ctx.fillText('已 暂 停', CV.width/2, CV.height/2 - 30);
-
   ctx.font = '16px "PingFang SC","Microsoft YaHei",sans-serif';
   ctx.fillStyle = '#d8e6cd';
   ctx.fillText('点击右上角 ▶ 按钮继续游戏', CV.width/2, CV.height/2 + 40);
-
-  /* 顶部两竖条装饰 */
   ctx.fillStyle = 'rgba(201,245,142,0.85)';
   const cx = CV.width/2, cy = CV.height/2 - 110;
   ctx.fillRect(cx - 22, cy - 22, 14, 44);
   ctx.fillRect(cx + 8,  cy - 22, 14, 44);
-
   ctx.restore();
 }
 
@@ -1252,20 +1358,21 @@ function render(){
       ctx.stroke();
       ctx.restore();
     }else{
+      /* ★ 预览使用植物的真实尺寸（坦克茅是 150×150） */
+      const sz = getPlantSize(previewKey);
       ctx.save();
       ctx.globalAlpha = 0.55;
-      drawAsset(IMG[def.img], mouseX-38, mouseY-46+8, 76, 92, def.fallback);
+      drawAsset(IMG[def.img], mouseX - sz.w/2, mouseY - sz.h/2 + 8, sz.w, sz.h, def.fallback);
       ctx.restore();
       ctx.save();
       ctx.strokeStyle = valid ? 'rgba(140,255,110,0.9)' : 'rgba(255,90,90,0.9)';
       ctx.lineWidth = 2;
       ctx.setLineDash([7,5]);
-      ctx.strokeRect(mouseX-40, mouseY-48, 80, 96);
+      ctx.strokeRect(mouseX - sz.w/2 - 2, mouseY - sz.h/2 + 8 - 6, sz.w + 4, sz.h + 12);
       ctx.restore();
     }
   }
 
-  /* ★ 暂停覆盖层画在最上层 */
   if (state.running && !state.over && state.paused){
     drawPausedOverlay();
   }
@@ -1281,10 +1388,8 @@ function loop(ts){
   lastTs = ts;
   if (dt > 0.05) dt = 0.05;
   if (dt < 0) dt = 0;
-
   if (state.running && !state.over && !state.paused) update(dt);
   else updateHUD();
-
   render();
   requestAnimationFrame(loop);
 }
@@ -1307,7 +1412,9 @@ function tryPlacePlant(x, y, key){
     type: key, x, y,
     hp: def.hp, maxHp: def.hp,
     cd: def.kind === 'sun' ? 5 : (def.kind === 'mine' ? 0 : 0.5),
-    t: Math.random()*6
+    t: Math.random()*6,
+    /* ★ 坦克茅标记：不可拖动 */
+    locked: def.kind === 'tank'
   });
   state.sun -= def.cost;
   state.cooldowns[key] = def.cooldown;
@@ -1330,7 +1437,7 @@ function fireMaodan(x, y){
 }
 
 CV.addEventListener('pointerdown', e=>{
-  if (!state.running || state.over || state.paused) return;   /* ★ 暂停时禁止交互 */
+  if (!state.running || state.over || state.paused) return;
   if (cardDrag) return;
   e.preventDefault();
   const p = toCanvas(e);
@@ -1358,7 +1465,12 @@ CV.addEventListener('pointerdown', e=>{
 
   const idx = findPlantIndexAt(p.x, p.y);
   if (idx >= 0){
-    dragPlant = state.plants[idx];
+    const plant = state.plants[idx];
+    /* ★ 坦克茅放下后不可再拖动 */
+    if (plant.locked || PLANTS[plant.type].kind === 'tank'){
+      return;
+    }
+    dragPlant = plant;
     dragOrigX = dragPlant.x;
     dragOrigY = dragPlant.y;
     dragOffX = dragPlant.x - p.x;
@@ -1437,7 +1549,7 @@ document.getElementById('shovelBtn').addEventListener('click', function(){
 });
 
 /* =========================================================
-   ★ 卡片栏左右箭头滚动
+   卡片栏左右箭头滚动
    ========================================================= */
 (function setupCardScroll(){
   const cardsBox = document.getElementById('cards');
@@ -1451,16 +1563,11 @@ document.getElementById('shovelBtn').addEventListener('click', function(){
     btnR.disabled = cardsBox.scrollLeft >= maxScroll - 1;
   }
 
-  btnL.addEventListener('click', ()=>{
-    cardsBox.scrollBy({ left: -STEP, behavior: 'smooth' });
-  });
-  btnR.addEventListener('click', ()=>{
-    cardsBox.scrollBy({ left:  STEP, behavior: 'smooth' });
-  });
+  btnL.addEventListener('click', ()=>{ cardsBox.scrollBy({ left: -STEP, behavior: 'smooth' }); });
+  btnR.addEventListener('click', ()=>{ cardsBox.scrollBy({ left:  STEP, behavior: 'smooth' }); });
   cardsBox.addEventListener('scroll', refreshArrows);
   window.addEventListener('resize', refreshArrows);
 
-  /* 卡片构建完之后再刷新一次状态 */
   const origBuild = buildCards;
   buildCards = function(){
     origBuild.apply(this, arguments);
@@ -1469,7 +1576,7 @@ document.getElementById('shovelBtn').addEventListener('click', function(){
 })();
 
 /* =========================================================
-   ★ 暂停键
+   暂停键
    ========================================================= */
 const pauseBtn = document.getElementById('pauseBtn');
 const ICON_PAUSE = '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">' +
@@ -1493,8 +1600,6 @@ function updatePauseButton(){
 pauseBtn.addEventListener('click', ()=>{
   if (!state.running || state.over) return;
   state.paused = !state.paused;
-
-  /* 暂停时清理所有拖拽状态，避免继续后错位 */
   if (state.paused){
     if (dragPlant){
       dragPlant.x = dragOrigX;
@@ -1528,7 +1633,6 @@ document.addEventListener('keydown', e=>{
     }
     updateHUD();
   }
-  /* 空格也能暂停 */
   if (e.key === ' ' && state.running && !state.over){
     e.preventDefault();
     pauseBtn.click();
@@ -1545,15 +1649,14 @@ Promise.all(
   updatePauseButton();
   const best = loadBest();
   showOverlay(
-    'MVC 3.0发布！',
+    'MVC 3.1发布！',
     '植物大战僵尸自制版）第三版发布！\n' +
-    '更新1：除尊地雷和茅弹外，所有植物只能种在左侧 1/4 种植区。\n' +
-    '更新2：新增「茅弹」——550 阳光 / 冷却 3 分钟，\n' +
-    '　　　　点击任意处从天而降，全屏清理僵尸。\n' +
-    '更新3：坦克僵尸随机刷新，撞上坦克茅时双方停下。\n' +
-    '更新4：按住卡片拖动可直接种植；点卡片 → 点草坪也可以。\n' +
+    '更新1：除地雷、茅弹、坦克外，其余植物只能种在左侧 1/4。\n' +
+    '更新2：坦克茅全屏可种、尺寸 150×150、放下后无法拖动。\n' +
+    '更新3：新增「茅弹」——550 阳光 / 冷却 3 分钟，全屏清僵尸。\n' +
+    '更新4：坦克僵尸撞上坦克茅时双方停下，头顶弹出歌词。\n' +
     '更新5：300 秒后僵尸密度 ×4，注意防线！\n' +
-    '新增：右上角暂停键，卡片栏左右箭头可滚动武器库。\n' +
+    '更新6：右上角暂停键，卡片栏左右箭头可滚动武器库。\n' +
     '挡住「春」，别让它们走到最左边！',
     best > 0 ? '历史最长存活：' + best.toFixed(1) + ' 秒' : '历史最长存活：——',
     '开始防守',
