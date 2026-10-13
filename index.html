@@ -123,6 +123,61 @@
   #devGuard p{margin:0 0 8px;color:#bbb;max-width:480px;line-height:1.7;font-size:14px;}
   #devGuard .hint{margin-top:20px;color:#666;font-size:12px;}
 
+  /* ★ 开局公告弹窗 */
+  #noticeModal{
+    position:fixed;inset:0;z-index:1000000;
+    background:rgba(0,0,0,.82);
+    display:none;align-items:center;justify-content:center;
+    backdrop-filter:blur(4px);
+    font-family:system-ui,"PingFang SC","Microsoft YaHei",sans-serif;
+  }
+  #noticeModal.show{display:flex;}
+  .notice-inner{
+    background:#1c2a12;
+    border:3px solid #ff5555;
+    border-radius:14px;
+    padding:26px 32px 22px;
+    max-width:540px;width:88%;
+    text-align:center;
+    box-shadow:0 0 30px rgba(255,60,60,.35), inset 0 0 0 1px rgba(255,120,120,.15);
+    animation:noticeIn .32s cubic-bezier(.2,1.4,.5,1);
+  }
+  @keyframes noticeIn{
+    0%  { transform:scale(.75); opacity:0; }
+    60% { transform:scale(1.04); opacity:1; }
+    100%{ transform:scale(1); opacity:1; }
+  }
+  .notice-title{
+    margin:0 0 16px;
+    font-size:26px;letter-spacing:4px;
+    color:#ff4444;
+    font-weight:900;
+    text-shadow:0 0 10px rgba(255,60,60,.55);
+  }
+  .notice-body{
+    text-align:left;
+    margin-bottom:20px;
+    padding:14px 16px;
+    background:rgba(255,255,255,.04);
+    border-radius:10px;
+    border-left:4px solid #ff4444;
+  }
+  .notice-body p{
+    margin:0 0 10px;
+    font-size:15px;line-height:1.75;
+    color:#ff3b3b;
+    font-weight:900;
+  }
+  .notice-body p:last-child{ margin-bottom:0; }
+  #noticeBtn{
+    padding:11px 40px;font-size:17px;font-weight:800;cursor:pointer;
+    background:#ff5050;color:#fff;border:none;border-radius:10px;
+    box-shadow:0 4px 0 #a02020;transition:.08s;
+    letter-spacing:2px;
+  }
+  #noticeBtn:active{transform:translateY(3px);box-shadow:0 1px 0 #a02020;}
+  #noticeBtn:hover{ background:#ff6666; }
+
   @media(max-width:640px){
     .card{width:44px;height:62px;}
     .card img{height:42px;}
@@ -185,14 +240,33 @@
   <div class="hint">此页面受保护</div>
 </div>
 
+<!-- ★ 开局公告弹窗 -->
+<div id="noticeModal">
+  <div class="notice-inner">
+    <h2 class="notice-title">公 告</h2>
+    <div class="notice-body">
+      <p>欢迎游玩 MVC 3.1！</p>
+      <p>近期加强了对开发者工具的拦截，请勿误触 F12 或 Ctrl+Shift+I！</p>
+      <p>若检测到开发者工具开启，游戏将被自动暂停并有可能清空成绩。</p>
+      <p>请勿篡改代码，尤其是福州一中林傻宝！</p>
+    </div>
+    <button id="noticeBtn">确 定</button>
+  </div>
+</div>
+
 <script>
 (function(){
 'use strict';
 
 /* =========================================================
-   0. ★ 开发者工具防护
+   0. ★ 开发者工具防护（无尺寸检测版）
    ---------------------------------------------------------
-   注意：无法 100% 阻止，只能拦下普通用户。
+   原理：
+     ① console getter 探针 — DevTools 打开时，控制台渲染对象
+        会触发 getter；关闭时不会。
+     ② debugger 时间差 — 打开时会被暂停，耗时长。
+     ③ 快捷键/右键/选择拦截
+   不依赖 outerWidth / innerWidth，全屏不会误判。
    ========================================================= */
 (function devGuard(){
   const el = document.getElementById('devGuard');
@@ -202,7 +276,6 @@
     if (tripped) return;
     tripped = true;
     el.classList.add('show');
-    /* 顺带把游戏暂停 */
     try{
       if (state && state.running && !state.over && !state.paused){
         state.paused = true;
@@ -217,54 +290,138 @@
     el.classList.remove('show');
   }
 
-  /* ① 窗口尺寸差检测（DevTools 停靠打开 → 尺寸差突然变大） */
-  const THRESHOLD = 220;
-  function sizeCheck(){
+  /* =======================================================
+     探针 A：console getter（覆盖 Console 面板）
+     ======================================================= */
+  let getterFired = false;
+  const probe = {
+    get secret(){
+      getterFired = true;
+      return 'x';
+    }
+  };
+
+  function probeA(){
     try{
-      if (typeof window.outerWidth !== 'number') return;
-      const dw = window.outerWidth  - window.innerWidth;
-      const dh = window.outerHeight - window.innerHeight;
-      if (dw > THRESHOLD || dh > THRESHOLD || dw < -100 || dh < -100){
-        trip();
-      }else{
-        calm();
+      getterFired = false;
+      console.log(probe);
+      console.clear();
+      if (getterFired){
+        if (!tripped) trip();
+        return true;
       }
     }catch(_){}
+    return false;
   }
-  setInterval(sizeCheck, 900);
 
-  /* ② 拦截快捷键 */
+  /* =======================================================
+     探针 B：隐藏元素属性陷阱（覆盖 Elements 面板）
+     -------------------------------------------------------
+     DevTools 打开 Elements 面板时，会去读取页面上节点的 id / class
+     我们放一个 1×1 的隐藏 div，给它的 id 定义 getter
+     ======================================================= */
+  let trapFired = false;
+  try{
+    const trapEl = document.createElement('div');
+    trapEl.style.cssText =
+      'position:fixed;left:-99999px;top:-99999px;width:1px;height:1px;pointer-events:none;';
+    Object.defineProperty(trapEl, 'id', {
+      configurable: true,
+      get(){
+        trapFired = true;
+        return '_dt_trap';
+      }
+    });
+    /* 再加一个 className 陷阱，双保险 */
+    Object.defineProperty(trapEl, 'className', {
+      configurable: true,
+      get(){
+        trapFired = true;
+        return '_dt_trap';
+      }
+    });
+    document.body.appendChild(trapEl);
+  }catch(_){}
+
+  function probeB(){
+    if (trapFired){
+      if (!tripped) trip();
+      return true;
+    }
+    return false;
+  }
+
+  /* =======================================================
+     探针 C：console 特征检测
+     -------------------------------------------------------
+     DevTools 打开时会给 console 对象挂一些隐藏 API
+     ======================================================= */
+  function probeC(){
+    try{
+      if (!window.console) return false;
+      if (window.console._commandLineAPI ||
+          window.console.__commandLineAPI ||
+          window.console._inspectorCommandLineAPI){
+        if (!tripped) trip();
+        return true;
+      }
+    }catch(_){}
+    return false;
+  }
+
+  /* =======================================================
+     探针 D：debugger 时间差（提高敏感度）
+     -------------------------------------------------------
+     阈值从 120ms 降到 50ms，1 次即触发
+     注意：会被 Ctrl+F8「Deactivate breakpoints」绕过
+     ======================================================= */
+  function probeD(){
+    try{
+      const t0 = performance.now();
+      const fn = new Function('debugger; return true;');
+      fn();
+      const dt = performance.now() - t0;
+      if (dt > 50){
+        if (!tripped) trip();
+        return true;
+      }
+    }catch(_){}
+    return false;
+  }
+
+  /* =======================================================
+     调度：A 每 1s，B 每 1.5s，C 每 2s，D 每 3s
+     ======================================================= */
+  try{ console.clear(); }catch(_){}
+  setInterval(probeA, 1000);
+  setInterval(probeB, 1500);
+  setInterval(probeC, 2000);
+  setInterval(probeD, 3000);
+
+  /* =======================================================
+     快捷键 / 右键 / 选择拦截（保持不变）
+     ======================================================= */
   document.addEventListener('keydown', function(e){
     const k = e.key;
-    /* F12 */
     if (k === 'F12'){ e.preventDefault(); e.stopPropagation(); trip(); return false; }
-    /* Ctrl+Shift+I / J / C / K */
     if (e.ctrlKey && e.shiftKey && /^[ijckIJKC]$/.test(k)){
       e.preventDefault(); e.stopPropagation(); trip(); return false;
     }
-    /* Ctrl+U（查看源码） */
     if (e.ctrlKey && (k === 'u' || k === 'U')){ e.preventDefault(); return false; }
-    /* Cmd+Alt+I / J / C（Mac） */
-    if (e.metaKey && e.altKey && /^[ijcIJ C]$/.test(k)){
+    if (e.metaKey && e.altKey && /^[ijcIJC]$/.test(k)){
       e.preventDefault(); e.stopPropagation(); trip(); return false;
     }
   }, true);
 
-  /* ③ 拦截右键菜单 */
   document.addEventListener('contextmenu', function(e){
-    e.preventDefault();
-    return false;
+    e.preventDefault(); return false;
   }, true);
 
-  /* ④ 拦截文本选择 / 拖拽（防复制代码） */
   document.addEventListener('selectstart', function(e){
     const tag = (e.target && e.target.tagName) || '';
     if (tag !== 'INPUT' && tag !== 'TEXTAREA') e.preventDefault();
   });
   document.addEventListener('dragstart', function(e){ e.preventDefault(); });
-
-  /* ⑤ 控制台清屏小把戏（可选，防止在控制台里轻易看到变量名） */
-  // 不启用 debugger，避免误伤正常用户
 })();
 
 /* =========================================================
@@ -329,7 +486,6 @@ const ZOMBIE_GOAL_X = 8;
 const DENSITY_RAMP_TIME = 300;
 const DENSITY_RAMP_MULT = 4.0;
 
-/* ★ 坦克茅视觉尺寸 */
 const TANK_SIZE = 150;
 
 const BEST_KEY = 'mao_vs_chun_best_time';
@@ -411,7 +567,6 @@ function drawAsset(img,x,y,w,h,fallback){
   }
 }
 
-/* ★ 按类型返回植物视觉尺寸 */
 function getPlantSize(key){
   if (PLANTS[key] && PLANTS[key].kind === 'tank') return { w: TANK_SIZE, h: TANK_SIZE };
   return { w: 76, h: 92 };
@@ -439,8 +594,6 @@ function easeOutBack(t){
 
 /* =========================================================
    7. 位置合法性
-   ---------------------------------------------------------
-   ★ 坦克茅也全屏可种
    ========================================================= */
 function isValidPos(x, y, plant){
   if (y < PLANT_MIN_Y || y > PLANT_MAX_Y) return false;
@@ -449,7 +602,6 @@ function isValidPos(x, y, plant){
   const isGlobal = (key === 'zunmine' || key === 'maodan' || key === 'tankmao');
   if (isGlobal){
     if (x > PLANT_MAX_X) return false;
-    /* 茅弹、坦克茅不做重叠检查 */
     if (key === 'maodan' || key === 'tankmao') return true;
   }else{
     if (x > PLANT_ZONE_RIGHT) return false;
@@ -1358,7 +1510,6 @@ function render(){
       ctx.stroke();
       ctx.restore();
     }else{
-      /* ★ 预览使用植物的真实尺寸（坦克茅是 150×150） */
       const sz = getPlantSize(previewKey);
       ctx.save();
       ctx.globalAlpha = 0.55;
@@ -1413,7 +1564,6 @@ function tryPlacePlant(x, y, key){
     hp: def.hp, maxHp: def.hp,
     cd: def.kind === 'sun' ? 5 : (def.kind === 'mine' ? 0 : 0.5),
     t: Math.random()*6,
-    /* ★ 坦克茅标记：不可拖动 */
     locked: def.kind === 'tank'
   });
   state.sun -= def.cost;
@@ -1466,7 +1616,6 @@ CV.addEventListener('pointerdown', e=>{
   const idx = findPlantIndexAt(p.x, p.y);
   if (idx >= 0){
     const plant = state.plants[idx];
-    /* ★ 坦克茅放下后不可再拖动 */
     if (plant.locked || PLANTS[plant.type].kind === 'tank'){
       return;
     }
@@ -1647,21 +1796,34 @@ Promise.all(
 ).then(()=>{
   buildCards();
   updatePauseButton();
+
   const best = loadBest();
-  showOverlay(
-    'MVC 3.1发布！',
-    '植物大战僵尸自制版）第三版发布！\n' +
-    '更新1：除地雷、茅弹、坦克外，其余植物只能种在左侧 1/4。\n' +
-    '更新2：坦克茅全屏可种、尺寸 150×150、放下后无法拖动。\n' +
-    '更新3：新增「茅弹」——550 阳光 / 冷却 3 分钟，全屏清僵尸。\n' +
-    '更新4：坦克僵尸撞上坦克茅时双方停下，头顶弹出歌词。\n' +
-    '更新5：300 秒后僵尸密度 ×4，注意防线！\n' +
-    '更新6：右上角暂停键，卡片栏左右箭头可滚动武器库。\n' +
-    '挡住「春」，别让它们走到最左边！',
-    best > 0 ? '历史最长存活：' + best.toFixed(1) + ' 秒' : '历史最长存活：——',
-    '开始防守',
-    startGame
-  );
+
+  /* ★ 先弹公告，用户点"确定"后再显示原本的开始界面 */
+  const noticeEl  = document.getElementById('noticeModal');
+  const noticeBtn = document.getElementById('noticeBtn');
+
+  noticeEl.classList.add('show');
+
+  noticeBtn.onclick = function(){
+    noticeEl.classList.remove('show');
+
+    showOverlay(
+      '近期加强了对开发者工具的拦截，不要误触F12按键！',
+      '植物大战僵尸自制版）第三版发布！\n' +
+      '更新1：除地雷、茅弹、坦克外，其余植物只能种在左侧 1/4。\n' +
+      '更新2：坦克茅全屏可种、尺寸 150×150、放下后无法拖动。\n' +
+      '更新3：新增「茅弹」——550 阳光 / 冷却 3 分钟，全屏清僵尸。\n' +
+      '更新4：坦克僵尸撞上坦克茅时双方停下，头顶弹出歌词。\n' +
+      '更新5：300 秒后僵尸密度 ×4，注意防线！\n' +
+      '更新6：右上角暂停键，卡片栏左右箭头可滚动武器库。\n' +
+      '挡住「春」，别让它们走到最左边！',
+      best > 0 ? '历史最长存活：' + best.toFixed(1) + ' 秒' : '历史最长存活：——',
+      '开始防守',
+      startGame
+    );
+  };
+
   updateHUD();
   requestAnimationFrame(loop);
 });
