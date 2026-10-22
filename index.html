@@ -123,7 +123,7 @@
   #devGuard p{margin:0 0 8px;color:#bbb;max-width:480px;line-height:1.7;font-size:14px;}
   #devGuard .hint{margin-top:20px;color:#666;font-size:12px;}
 
-  /* ★ 开局公告弹窗 */
+  /* ★ 开场提示弹窗 */
   #noticeModal{
     position:fixed;inset:0;z-index:1000000;
     background:rgba(0,0,0,.82);
@@ -157,18 +157,18 @@
   .notice-body{
     text-align:left;
     margin-bottom:20px;
-    padding:14px 16px;
+    padding:18px 16px;
     background:rgba(255,255,255,.04);
     border-radius:10px;
     border-left:4px solid #ff4444;
   }
   .notice-body p{
-    margin:0 0 10px;
-    font-size:15px;line-height:1.75;
+    margin:0;
+    font-size:19px;line-height:1.75;
     color:#ff3b3b;
     font-weight:900;
+    text-align:center;
   }
-  .notice-body p:last-child{ margin-bottom:0; }
   #noticeBtn{
     padding:11px 40px;font-size:17px;font-weight:800;cursor:pointer;
     background:#ff5050;color:#fff;border:none;border-radius:10px;
@@ -178,6 +178,48 @@
   #noticeBtn:active{transform:translateY(3px);box-shadow:0 1px 0 #a02020;}
   #noticeBtn:hover{ background:#ff6666; }
 
+  /* ★ 歌词遮罩层（覆盖游戏画面，70% 不透明） */
+  #lyricOverlay{
+    position:absolute;inset:0;
+    z-index:1000000;
+    background:rgba(0,0,0,0.7);
+    display:none;
+    align-items:center;justify-content:center;
+    border-radius:0 0 12px 12px;
+    opacity:0;
+    transition:opacity .6s ease;
+    pointer-events:auto;
+  }
+  #lyricOverlay.show{ display:flex; opacity:1; }
+  #lyricOverlay.fade-out{ opacity:0; }
+
+  .lyric-content{
+    text-align:center;
+    color:#fff;
+    font-size:30px;
+    line-height:2.1;
+    font-weight:700;
+    letter-spacing:5px;
+    text-shadow:
+      0 0 24px rgba(255,200,120,.9),
+      0 0 48px rgba(255,150,60,.5),
+      0 3px 10px rgba(0,0,0,.95);
+  }
+  .lyric-line{
+    margin:0;
+    opacity:0;
+    transform:translateY(16px);
+    animation:lineFadeIn 1.2s ease-out forwards;
+  }
+  .lyric-line:nth-child(1){ animation-delay:1.3s; }
+  .lyric-line:nth-child(2){ animation-delay:5.7s; }
+  .lyric-line:nth-child(3){ animation-delay:9.7s; }
+  .lyric-line:nth-child(4){ animation-delay:13.7s; }
+  @keyframes lineFadeIn{
+    0%  { opacity:0; transform:translateY(16px); }
+    100%{ opacity:1; transform:translateY(0); }
+  }
+
   @media(max-width:640px){
     .card{width:44px;height:62px;}
     .card img{height:42px;}
@@ -186,6 +228,7 @@
     #shovelBtn,#pauseBtn{width:40px;height:40px;}
     #timerBox{font-size:12px;padding:5px 7px;}
     #sunBox{min-width:64px;font-size:13px;padding:4px 6px;}
+    .lyric-content{ font-size:20px; letter-spacing:3px; line-height:2; }
   }
 </style>
 </head>
@@ -228,6 +271,16 @@
         <button id="ovBtn">开始防守</button>
       </div>
     </div>
+
+    <!-- ★ 歌词遮罩层（盖住游戏画面） -->
+    <div id="lyricOverlay">
+      <div class="lyric-content">
+        <p class="lyric-line">那些童的记忆</p>
+        <p class="lyric-line">落在春的泥土里</p>
+        <p class="lyric-line">滋养的Daddy</p>
+        <p class="lyric-line">开出下一个花季</p>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -240,17 +293,14 @@
   <div class="hint">此页面受保护</div>
 </div>
 
-<!-- ★ 开局公告弹窗 -->
+<!-- ★ 开场提示弹窗 -->
 <div id="noticeModal">
   <div class="notice-inner">
-    <h2 class="notice-title">公 告</h2>
+    <h2 class="notice-title">提 示</h2>
     <div class="notice-body">
-      <p>欢迎游玩 MVC 3.1！</p>
-      <p>近期加强了对开发者工具的拦截，请勿误触 F12 或 Ctrl+Shift+I！</p>
-      <p>若检测到开发者工具开启，游戏将被自动暂停并有可能清空成绩。</p>
-      <p>请勿篡改代码，尤其是福州一中林傻宝！</p>
+      <p>请开启设备声音后点击继续</p>
     </div>
-    <button id="noticeBtn">确 定</button>
+    <button id="noticeBtn">继 续</button>
   </div>
 </div>
 
@@ -260,13 +310,6 @@
 
 /* =========================================================
    0. ★ 开发者工具防护（无尺寸检测版）
-   ---------------------------------------------------------
-   原理：
-     ① console getter 探针 — DevTools 打开时，控制台渲染对象
-        会触发 getter；关闭时不会。
-     ② debugger 时间差 — 打开时会被暂停，耗时长。
-     ③ 快捷键/右键/选择拦截
-   不依赖 outerWidth / innerWidth，全屏不会误判。
    ========================================================= */
 (function devGuard(){
   const el = document.getElementById('devGuard');
@@ -290,9 +333,6 @@
     el.classList.remove('show');
   }
 
-  /* =======================================================
-     探针 A：console getter（覆盖 Console 面板）
-     ======================================================= */
   let getterFired = false;
   const probe = {
     get secret(){
@@ -314,12 +354,6 @@
     return false;
   }
 
-  /* =======================================================
-     探针 B：隐藏元素属性陷阱（覆盖 Elements 面板）
-     -------------------------------------------------------
-     DevTools 打开 Elements 面板时，会去读取页面上节点的 id / class
-     我们放一个 1×1 的隐藏 div，给它的 id 定义 getter
-     ======================================================= */
   let trapFired = false;
   try{
     const trapEl = document.createElement('div');
@@ -332,7 +366,6 @@
         return '_dt_trap';
       }
     });
-    /* 再加一个 className 陷阱，双保险 */
     Object.defineProperty(trapEl, 'className', {
       configurable: true,
       get(){
@@ -351,11 +384,6 @@
     return false;
   }
 
-  /* =======================================================
-     探针 C：console 特征检测
-     -------------------------------------------------------
-     DevTools 打开时会给 console 对象挂一些隐藏 API
-     ======================================================= */
   function probeC(){
     try{
       if (!window.console) return false;
@@ -369,12 +397,6 @@
     return false;
   }
 
-  /* =======================================================
-     探针 D：debugger 时间差（提高敏感度）
-     -------------------------------------------------------
-     阈值从 120ms 降到 50ms，1 次即触发
-     注意：会被 Ctrl+F8「Deactivate breakpoints」绕过
-     ======================================================= */
   function probeD(){
     try{
       const t0 = performance.now();
@@ -389,18 +411,12 @@
     return false;
   }
 
-  /* =======================================================
-     调度：A 每 1s，B 每 1.5s，C 每 2s，D 每 3s
-     ======================================================= */
   try{ console.clear(); }catch(_){}
   setInterval(probeA, 1000);
   setInterval(probeB, 1500);
   setInterval(probeC, 2000);
   setInterval(probeD, 3000);
 
-  /* =======================================================
-     快捷键 / 右键 / 选择拦截（保持不变）
-     ======================================================= */
   document.addEventListener('keydown', function(e){
     const k = e.key;
     if (k === 'F12'){ e.preventDefault(); e.stopPropagation(); trip(); return false; }
@@ -1799,29 +1815,70 @@ Promise.all(
 
   const best = loadBest();
 
-  /* ★ 先弹公告，用户点"确定"后再显示原本的开始界面 */
-  const noticeEl  = document.getElementById('noticeModal');
-  const noticeBtn = document.getElementById('noticeBtn');
+  const noticeEl    = document.getElementById('noticeModal');
+  const noticeBtn   = document.getElementById('noticeBtn');
+  const lyricEl     = document.getElementById('lyricOverlay');
 
+  /* ★ 开场：显示"请开启设备声音"提示 */
   noticeEl.classList.add('show');
 
+  /* ★ 点击继续：
+       1. 关闭提示
+       2. 播放 chunni.mp3
+       3. 显示 70% 遮罩 + 歌词（逐行淡入）
+       4. 19 秒后遮罩和歌词淡出，显示原本的开始界面
+  */
   noticeBtn.onclick = function(){
     noticeEl.classList.remove('show');
 
-    showOverlay(
-      '近期加强了对开发者工具的拦截，不要误触F12按键！',
-      '植物大战僵尸自制版）第三版发布！\n' +
-      '更新1：除地雷、茅弹、坦克外，其余植物只能种在左侧 1/4。\n' +
-      '更新2：坦克茅全屏可种、尺寸 150×150、放下后无法拖动。\n' +
-      '更新3：新增「茅弹」——550 阳光 / 冷却 3 分钟，全屏清僵尸。\n' +
-      '更新4：坦克僵尸撞上坦克茅时双方停下，头顶弹出歌词。\n' +
-      '更新5：300 秒后僵尸密度 ×4，注意防线！\n' +
-      '更新6：右上角暂停键，卡片栏左右箭头可滚动武器库。\n' +
-      '挡住「春」，别让它们走到最左边！',
-      best > 0 ? '历史最长存活：' + best.toFixed(1) + ' 秒' : '历史最长存活：——',
-      '开始防守',
-      startGame
-    );
+    /* 1. 播放音乐 */
+    let bgm = null;
+    try{
+      bgm = new Audio('chunni.mp3');
+      bgm.volume = 1.0;
+      const p = bgm.play();
+      if (p && typeof p.catch === 'function'){
+        p.catch(err => {
+          console.warn('[MVC] 音频播放被阻止或文件缺失：', err);
+        });
+      }
+    }catch(err){
+      console.warn('[MVC] 音频创建失败：', err);
+    }
+
+    /* 2. 显示歌词遮罩（淡入 + 逐行淡入歌词） */
+    lyricEl.classList.remove('fade-out');
+    lyricEl.classList.add('show');
+
+    /* 3. 19 秒后撤去遮罩 + 歌词，进入开始界面 */
+    setTimeout(function(){
+      /* 停止音乐 */
+      try{ if (bgm) bgm.pause(); }catch(_){}
+
+      /* 遮罩淡出 */
+      lyricEl.classList.add('fade-out');
+      setTimeout(function(){
+        lyricEl.classList.remove('show');
+        lyricEl.classList.remove('fade-out');
+
+        /* 显示原本的"MVC 3.1 发布"开始界面 */
+        showOverlay(
+          '近期加强了对开发者工具的拦截，不要误触F12按键！',
+          '植物大战僵尸自制版）V3.3发布！\n' +
+          '更新1：除地雷、茅弹、坦克外，其余植物只能种在左侧 1/4。\n' +
+          '更新2：坦克茅全屏可种、尺寸 150×150、放下后无法拖动。\n' +
+          '更新3：新增「茅弹」——550 阳光 / 冷却 3 分钟，全屏清僵尸。\n' +
+          '更新4：坦克僵尸撞上坦克茅时双方停下，头顶弹出歌词。\n' +
+          '更新5：300 秒后僵尸密度 ×4，注意防线！\n' +
+          '更新6：右上角暂停键，卡片栏左右箭头可滚动武器库。\n' +
+          '挡住「春」，别让它们走到最左边！',
+          best > 0 ? '历史最长存活：' + best.toFixed(1) + ' 秒' : '历史最长存活：——',
+          '开始防守',
+          startGame
+        );
+      }, 800);   /* 遮罩淡出 0.8s */
+    }, 19000);   /* 19 秒后开始撤 */
+
   };
 
   updateHUD();
