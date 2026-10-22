@@ -204,20 +204,58 @@
       0 0 24px rgba(255,200,120,.9),
       0 0 48px rgba(255,150,60,.5),
       0 3px 10px rgba(0,0,0,.95);
+    display:none;
   }
+  .lyric-content.show{ display:block; }
+
+  /* ★ 歌词行：改由 JS 添加 .show-line 触发过渡（音频时间驱动） */
   .lyric-line{
     margin:0;
     opacity:0;
     transform:translateY(16px);
-    animation:lineFadeIn 1.2s ease-out forwards;
+    transition:opacity 1.2s ease-out, transform 1.2s ease-out;
   }
-  .lyric-line:nth-child(1){ animation-delay:1.3s; }
-  .lyric-line:nth-child(2){ animation-delay:5.7s; }
-  .lyric-line:nth-child(3){ animation-delay:9.7s; }
-  .lyric-line:nth-child(4){ animation-delay:13.7s; }
-  @keyframes lineFadeIn{
-    0%  { opacity:0; transform:translateY(16px); }
-    100%{ opacity:1; transform:translateY(0); }
+  .lyric-line.show-line{
+    opacity:1;
+    transform:translateY(0);
+  }
+
+  /* ★ 音频加载进度条 */
+  .loading-wrap{
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap:18px;
+  }
+  .loading-wrap.hide{ display:none; }
+  .loading-title{
+    font-size:22px;
+    color:#fff;
+    letter-spacing:4px;
+    font-weight:700;
+    text-shadow:0 0 12px rgba(255,200,120,.6);
+  }
+  .loading-bar-outer{
+    width:min(360px, 70vw);
+    height:14px;
+    background:rgba(255,255,255,.12);
+    border-radius:7px;
+    overflow:hidden;
+    box-shadow:inset 0 1px 3px rgba(0,0,0,.5);
+  }
+  .loading-bar-inner{
+    height:100%;
+    width:0%;
+    background:linear-gradient(90deg, #ffd75e, #ff9a3c);
+    border-radius:7px;
+    transition:width .15s ease-out;
+    box-shadow:0 0 12px rgba(255,200,80,.7);
+  }
+  .loading-pct{
+    font-size:16px;
+    color:#ffe066;
+    font-variant-numeric:tabular-nums;
+    letter-spacing:2px;
   }
 
   @media(max-width:640px){
@@ -229,6 +267,7 @@
     #timerBox{font-size:12px;padding:5px 7px;}
     #sunBox{min-width:64px;font-size:13px;padding:4px 6px;}
     .lyric-content{ font-size:20px; letter-spacing:3px; line-height:2; }
+    .loading-title{ font-size:17px; letter-spacing:2px; }
   }
 </style>
 </head>
@@ -272,9 +311,17 @@
       </div>
     </div>
 
-    <!-- ★ 歌词遮罩层（盖住游戏画面） -->
+    <!-- ★ 歌词 / 加载遮罩层 -->
     <div id="lyricOverlay">
-      <div class="lyric-content">
+      <div class="loading-wrap" id="loadingWrap">
+        <div class="loading-title">音 频 加 载 中 …</div>
+        <div class="loading-bar-outer">
+          <div class="loading-bar-inner" id="loadBar"></div>
+        </div>
+        <div class="loading-pct" id="loadPct">0%</div>
+      </div>
+
+      <div class="lyric-content" id="lyricContent">
         <p class="lyric-line">那些童的记忆</p>
         <p class="lyric-line">落在春的泥土里</p>
         <p class="lyric-line">滋养的Daddy</p>
@@ -1815,53 +1862,65 @@ Promise.all(
 
   const best = loadBest();
 
-  const noticeEl    = document.getElementById('noticeModal');
-  const noticeBtn   = document.getElementById('noticeBtn');
-  const lyricEl     = document.getElementById('lyricOverlay');
+  const noticeEl      = document.getElementById('noticeModal');
+  const noticeBtn     = document.getElementById('noticeBtn');
+  const lyricEl       = document.getElementById('lyricOverlay');
+  const loadingWrap   = document.getElementById('loadingWrap');
+  const lyricContent  = document.getElementById('lyricContent');
+  const loadBar       = document.getElementById('loadBar');
+  const loadPct       = document.getElementById('loadPct');
+
+  /* ================= 配置区（要改就改这里） ================= */
+  const BGM_URL       = 'chunni.mp3';
+  const FETCH_TIMEOUT = 20000;   // 下载最多等 20 秒
+  const CANPLAY_TIMEOUT = 8000;  // 解码最多等 8 秒
+  const LYRIC_TIMES   = [1.3, 5.7, 9.7, 13.7]; // 四句歌词出现（音频秒数）
+  const MAX_PLAY_SEC  = 19;      // 最长播放 19 秒
+  /* ========================================================= */
 
   /* ★ 开场：显示"请开启设备声音"提示 */
   noticeEl.classList.add('show');
 
-  /* ★ 点击继续：
-       1. 关闭提示
-       2. 播放 chunni.mp3
-       3. 显示 70% 遮罩 + 歌词（逐行淡入）
-       4. 19 秒后遮罩和歌词淡出，显示原本的开始界面
-  */
   noticeBtn.onclick = function(){
     noticeEl.classList.remove('show');
+    startIntro();
+  };
 
-    /* 1. 播放音乐 */
-    let bgm = null;
-    try{
-      bgm = new Audio('chunni.mp3');
-      bgm.volume = 1.0;
-      const p = bgm.play();
-      if (p && typeof p.catch === 'function'){
-        p.catch(err => {
-          console.warn('[MVC] 音频播放被阻止或文件缺失：', err);
-        });
-      }
-    }catch(err){
-      console.warn('[MVC] 音频创建失败：', err);
-    }
-
-    /* 2. 显示歌词遮罩（淡入 + 逐行淡入歌词） */
+  function startIntro(){
+    /* 重置 UI：显示进度条，隐藏歌词 */
+    loadingWrap.classList.remove('hide');
+    lyricContent.classList.remove('show');
+    loadBar.style.width = '0%';
+    loadPct.textContent = '0%';
     lyricEl.classList.remove('fade-out');
     lyricEl.classList.add('show');
 
-    /* 3. 19 秒后撤去遮罩 + 歌词，进入开始界面 */
-    setTimeout(function(){
-      /* 停止音乐 */
-      try{ if (bgm) bgm.pause(); }catch(_){}
+    const lines = lyricContent.querySelectorAll('.lyric-line');
+    lines.forEach(line => line.classList.remove('show-line'));
 
-      /* 遮罩淡出 */
+    let bgm = null;
+    let blobUrl = null;
+    let rafId = 0;
+    let finished = false;
+    let endTime = MAX_PLAY_SEC;
+    let stallTimer = null;
+
+    function cleanup(){
+      if (rafId){ cancelAnimationFrame(rafId); rafId = 0; }
+      if (stallTimer){ clearTimeout(stallTimer); stallTimer = null; }
+      if (bgm){ try{ bgm.pause(); }catch(_){} }
+      if (blobUrl){ try{ URL.revokeObjectURL(blobUrl); }catch(_){} }
+      bgm = null;
+      blobUrl = null;
+    }
+
+    function finish(){
+      if (finished) return;
+      finished = true;
+      cleanup();
       lyricEl.classList.add('fade-out');
       setTimeout(function(){
-        lyricEl.classList.remove('show');
-        lyricEl.classList.remove('fade-out');
-
-        /* 显示原本的"MVC 3.1 发布"开始界面 */
+        lyricEl.classList.remove('show', 'fade-out');
         showOverlay(
           '近期加强了对开发者工具的拦截，不要误触F12按键！',
           '植物大战僵尸自制版）V3.3发布！\n' +
@@ -1876,10 +1935,123 @@ Promise.all(
           '开始防守',
           startGame
         );
-      }, 800);   /* 遮罩淡出 0.8s */
-    }, 19000);   /* 19 秒后开始撤 */
+      }, 800);
+    }
 
-  };
+    /* 整体兜底：极端情况（网络/浏览器异常）下最多等 FETCH+CANPLAY+5 秒 */
+    const hardTimer = setTimeout(function(){
+      if (!finished){
+        console.warn('[MVC] 超时，跳过开场');
+        finish();
+      }
+    }, FETCH_TIMEOUT + CANPLAY_TIMEOUT + 5000);
+
+    (async function run(){
+      try{
+        /* ---------- 1. 下载音频 + 进度 ---------- */
+        const controller = new AbortController();
+        const fetchTimer = setTimeout(() => controller.abort(), FETCH_TIMEOUT);
+
+        let resp;
+        try{
+          resp = await fetch(BGM_URL, {
+            cache: 'force-cache',
+            signal: controller.signal
+          });
+        }finally{
+          clearTimeout(fetchTimer);
+        }
+
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+
+        const total = parseInt(resp.headers.get('content-length') || '0', 10);
+        const reader = resp.body.getReader();
+        const chunks = [];
+        let received = 0;
+
+        while (true){
+          const { done, value } = await reader.read();
+          if (done) break;
+          chunks.push(value);
+          received += value.length;
+          if (total > 0){
+            const p = Math.min(100, Math.round(received / total * 100));
+            loadBar.style.width = p + '%';
+            loadPct.textContent = p + '%';
+          }else{
+            loadPct.textContent = (received / 1024).toFixed(0) + ' KB';
+          }
+        }
+        loadBar.style.width = '100%';
+        loadPct.textContent = '100%';
+
+        /* ---------- 2. 生成 Blob + Audio ---------- */
+        const blob = new Blob(chunks, { type: 'audio/mpeg' });
+        blobUrl = URL.createObjectURL(blob);
+        bgm = new Audio(blobUrl);
+        bgm.preload = 'auto';
+
+        /* ---------- 3. 等可以流畅播放 ---------- */
+        await new Promise((resolve, reject) => {
+          const t = setTimeout(() => reject(new Error('canplay 超时')), CANPLAY_TIMEOUT);
+          bgm.addEventListener('canplaythrough', () => { clearTimeout(t); resolve(); }, { once: true });
+          bgm.addEventListener('error', () => { clearTimeout(t); reject(new Error('音频解码失败')); }, { once: true });
+        });
+
+        /* ---------- 4. 切换 UI：进度条 → 歌词 ---------- */
+        loadingWrap.classList.add('hide');
+        lyricContent.classList.add('show');
+        lines.forEach(line => line.classList.remove('show-line'));
+
+        /* ---------- 5. 播放 ---------- */
+        await bgm.play();
+
+        /* ---------- 6. 决定结束时间 ---------- */
+        if (bgm.duration && isFinite(bgm.duration) && bgm.duration + 0.5 < MAX_PLAY_SEC){
+          endTime = bgm.duration + 0.3;
+        }else{
+          endTime = MAX_PLAY_SEC;
+        }
+
+        /* ---------- 7. 卡顿兜底 ---------- */
+        bgm.addEventListener('waiting', () => {
+          stallTimer = setTimeout(() => {
+            console.warn('[MVC] 音频卡住超过 5 秒，强制结束');
+            clearTimeout(hardTimer);
+            finish();
+          }, 5000);
+        });
+        bgm.addEventListener('playing', () => {
+          if (stallTimer){ clearTimeout(stallTimer); stallTimer = null; }
+        });
+
+        /* ---------- 8. 歌词跟随音频时间 ---------- */
+        function tick(){
+          if (finished) return;
+          const t = bgm.currentTime;
+
+          for (let i = 0; i < lines.length; i++){
+            if (t >= LYRIC_TIMES[i] && !lines[i].classList.contains('show-line')){
+              lines[i].classList.add('show-line');
+            }
+          }
+
+          if (t >= endTime){
+            clearTimeout(hardTimer);
+            finish();
+            return;
+          }
+          rafId = requestAnimationFrame(tick);
+        }
+        tick();
+
+      }catch(err){
+        console.warn('[MVC] 音频加载/播放失败，跳过开场：', err);
+        clearTimeout(hardTimer);
+        finish();
+      }
+    })();
+  }
 
   updateHUD();
   requestAnimationFrame(loop);
