@@ -1872,10 +1872,8 @@ Promise.all(
 
   /* ================= 配置区（要改就改这里） ================= */
   const BGM_URL       = 'chunni.mp3';
-  const FETCH_TIMEOUT = 20000;   // 下载最多等 20 秒
-  const CANPLAY_TIMEOUT = 8000;  // 解码最多等 8 秒
-  const LYRIC_TIMES   = [1.3, 5.7, 9.7, 13.7]; // 四句歌词出现（音频秒数）
-  const MAX_PLAY_SEC  = 19;      // 最长播放 19 秒
+  const LYRIC_TIMES   = [1.3, 5.7, 9.7, 13.7];
+  const MAX_PLAY_SEC  = 19;
   /* ========================================================= */
 
   /* ★ 开场：显示"请开启设备声音"提示 */
@@ -1904,10 +1902,12 @@ Promise.all(
     let finished = false;
     let endTime = MAX_PLAY_SEC;
     let stallTimer = null;
+    let hardTimer = null;
 
     function cleanup(){
       if (rafId){ cancelAnimationFrame(rafId); rafId = 0; }
       if (stallTimer){ clearTimeout(stallTimer); stallTimer = null; }
+      if (hardTimer){ clearTimeout(hardTimer); hardTimer = null; }
       if (bgm){ try{ bgm.pause(); }catch(_){} }
       if (blobUrl){ try{ URL.revokeObjectURL(blobUrl); }catch(_){} }
       bgm = null;
@@ -1938,30 +1938,10 @@ Promise.all(
       }, 800);
     }
 
-    /* 整体兜底：极端情况（网络/浏览器异常）下最多等 FETCH+CANPLAY+5 秒 */
-    const hardTimer = setTimeout(function(){
-      if (!finished){
-        console.warn('[MVC] 超时，跳过开场');
-        finish();
-      }
-    }, FETCH_TIMEOUT + CANPLAY_TIMEOUT + 5000);
-
     (async function run(){
       try{
-        /* ---------- 1. 下载音频 + 进度 ---------- */
-        const controller = new AbortController();
-        const fetchTimer = setTimeout(() => controller.abort(), FETCH_TIMEOUT);
-
-        let resp;
-        try{
-          resp = await fetch(BGM_URL, {
-            cache: 'force-cache',
-            signal: controller.signal
-          });
-        }finally{
-          clearTimeout(fetchTimer);
-        }
-
+        /* ---------- 1. 下载音频 + 进度（无超时） ---------- */
+        const resp = await fetch(BGM_URL, { cache: 'force-cache' });
         if (!resp.ok) throw new Error('HTTP ' + resp.status);
 
         const total = parseInt(resp.headers.get('content-length') || '0', 10);
@@ -1991,11 +1971,10 @@ Promise.all(
         bgm = new Audio(blobUrl);
         bgm.preload = 'auto';
 
-        /* ---------- 3. 等可以流畅播放 ---------- */
+        /* ---------- 3. 等可以流畅播放（无超时） ---------- */
         await new Promise((resolve, reject) => {
-          const t = setTimeout(() => reject(new Error('canplay 超时')), CANPLAY_TIMEOUT);
-          bgm.addEventListener('canplaythrough', () => { clearTimeout(t); resolve(); }, { once: true });
-          bgm.addEventListener('error', () => { clearTimeout(t); reject(new Error('音频解码失败')); }, { once: true });
+          bgm.addEventListener('canplaythrough', resolve, { once: true });
+          bgm.addEventListener('error', () => reject(new Error('音频解码失败')), { once: true });
         });
 
         /* ---------- 4. 切换 UI：进度条 → 歌词 ---------- */
@@ -2005,6 +1984,14 @@ Promise.all(
 
         /* ---------- 5. 播放 ---------- */
         await bgm.play();
+
+        /* ---------- 5.5 播放开始后才启动兜底计时 ---------- */
+        hardTimer = setTimeout(function(){
+          if (!finished){
+            console.warn('[MVC] 播放超时，结束开场');
+            finish();
+          }
+        }, (MAX_PLAY_SEC + 8) * 1000);
 
         /* ---------- 6. 决定结束时间 ---------- */
         if (bgm.duration && isFinite(bgm.duration) && bgm.duration + 0.5 < MAX_PLAY_SEC){
@@ -2017,7 +2004,6 @@ Promise.all(
         bgm.addEventListener('waiting', () => {
           stallTimer = setTimeout(() => {
             console.warn('[MVC] 音频卡住超过 5 秒，强制结束');
-            clearTimeout(hardTimer);
             finish();
           }, 5000);
         });
@@ -2036,8 +2022,7 @@ Promise.all(
             }
           }
 
-          if (t >= endTime){
-            clearTimeout(hardTimer);
+          if (bgm.ended || t >= endTime){
             finish();
             return;
           }
@@ -2047,7 +2032,6 @@ Promise.all(
 
       }catch(err){
         console.warn('[MVC] 音频加载/播放失败，跳过开场：', err);
-        clearTimeout(hardTimer);
         finish();
       }
     })();
