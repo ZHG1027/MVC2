@@ -314,7 +314,7 @@
     <!-- ★ 歌词 / 加载遮罩层 -->
     <div id="lyricOverlay">
       <div class="loading-wrap" id="loadingWrap">
-        <div class="loading-title">音 频 加 载 中 …</div>
+        <div class="loading-title">加 载 中 …</div>
         <div class="loading-bar-outer">
           <div class="loading-bar-inner" id="loadBar"></div>
         </div>
@@ -2031,7 +2031,7 @@ Promise.all(
         tick();
 
       }catch(err){
-        console.warn('[MVC] 音频加载/播放失败，跳过开场：', err);
+        console.warn('[MVC] 音频加载/播放失败，已跳过动画：', err);
         finish();
       }
     })();
